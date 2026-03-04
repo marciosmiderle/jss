@@ -1,4 +1,4 @@
-;;; jss-utils.el -- generic utilities. buttons, labels, sections, a few macros and utility functions.
+;;; jss-utils.el -- generic utilities. buttons, labels, sections, a few macros and utility functions.  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -17,7 +17,9 @@
 ;; Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 ;; MA 02111-1307 USA
 
-(require 'cl)
+;;; Commentary:
+;;; Code:
+
 (require 'eieio)
 
 (defface jss-button-face '((t :underline t))
@@ -38,7 +40,7 @@ the current buffer. Pass `jss-add-text-button-args` to
     (apply 'jss-add-text-button start (point) jss-add-text-button-args)
     label))
 
-(defun* jss-add-text-button (start end primary-action &key secondary-action other-properties)
+(cl-defun jss-add-text-button (start end primary-action &key secondary-action other-properties)
   "Create a jss-button, whose primary (RET) action is
 `primary-action´ and whose secondary action (SPC) is
 `secondary-action` from the positions `start` to `end`.
@@ -141,9 +143,9 @@ from `start` to `end`."
       (jss-insert-as-whitespace "^$"))
     (when (string-match "^[ \t\r\n\f]" string)
       (jss-insert-as-whitespace "^"))
-    (loop
+    (cl-loop
      for char across string
-     do (case char
+     do (cl-case char
           (?\s (jss-insert-as-whitespace "_"))
           (?\t (jss-insert-as-whitespace "\\t"))
           (?\n (jss-insert-as-whitespace "\\n"))
@@ -170,53 +172,53 @@ before (point) with the text property `property-name`."
   (or (get-text-property (point) property-name)
       (previous-single-property-change (point) property-name)))
 
-(defun* jss-start-of-next-property-block (property-name &optional (error t))
+(cl-defun jss-start-of-next-property-block (property-name &optional (error t))
   "Moves point to the first char of the next block with property
 `property-name`. If `error` is non-NIL signals and error if there is
 no next block with the required property."
-  (block nil
+  (cl-block nil
     (when (get-text-property (point) property-name)
-      (return (jss-start-of-current-property-block property-name)))
+      (cl-return (jss-start-of-current-property-block property-name)))
     (let ((next-change (next-single-property-change (point) property-name)))
       (when next-change
-        (return (goto-char next-change)))
+        (cl-return (goto-char next-change)))
       (while (not (get-text-property (point) property-name))
         (when (= (point) (point-max))
           (if error
               (error "Unable to find start of next block with property %s" property-name)
-            (return nil)))
+            (cl-return nil)))
         (forward-char 1))
-      (return (point)))))
+      (cl-return (point)))))
 
-(defun* jss-end-of-previous-property-block (property-name &optional (error t))
+(cl-defun jss-end-of-previous-property-block (property-name &optional (error t))
   "Moves point to the last char of the nexprevious block with
 property `property-name`. If `error` is non-NIL signals and error
 if there is no next block with the required property."
-  (block
+  (cl-block
       nil
     (when (get-text-property (point) property-name)
-      (return (jss-end-of-current-property-block property-name)))
+      (cl-return (jss-end-of-current-property-block property-name)))
 
     (let ((previous-change (if (eobp) ;; previous-single-property-change works differently at eobp, a char by char search is easier
                                nil
                              (previous-single-property-change (point) property-name))))
       (when previous-change
-        (return (goto-char previous-change)))
+        (cl-return (goto-char previous-change)))
       (while (not (get-text-property (point) property-name))
         (when (= (point) (point-min))
           (if error
               (error "Unable to find previous block with property %s" property-name)
-            (return nil)))
+            (cl-return nil)))
         (backward-char 1))
-      (return (point)))))
+      (cl-return (point)))))
 
 (defun jss-start-of-current-property-block (property-name)
   (unless (get-text-property (point) property-name)
     (error "Attempting to get start of current block with property %s, but point doesn't have this property." property-name))
-  (block nil
+  (cl-block nil
     (while (get-text-property (point) property-name)
       (when (= (point) (point-min))
-        (return (point)))
+        (cl-return (point)))
       (backward-char 1))
     (forward-char 1))
   (point))
@@ -224,14 +226,14 @@ if there is no next block with the required property."
 (defun jss-end-of-current-property-block (property-name)
   (unless (get-text-property (point) property-name)
     (error "Attempting to get end of current block with property %s, but point doesn't have this property." property-name))
-  (block nil
+  (cl-block nil
     (while (get-text-property (point) property-name)
       (when (= (point) (point-max))
-        (return))
+        (cl-return))
       (forward-char 1)))
   (point))
 
-(defun* jss-find-property-block (property-name property-value &key (test 'equal) (error t))
+(cl-defun jss-find-property-block (property-name property-value &key (test 'equal) (error t))
   "Returns a cons of (start . end) of the proerty block, a
 sequence fo char which all habe the property named
 `property-name` whose value is `test` to `property-value` in the
@@ -241,29 +243,29 @@ Note: this function does not deal well when there are multiple
 blocks with the same property name and value, make sure to use
 rear-nonsticky to maintain blocks as continguous sequences of
 chars."
-  (block nil
+  (cl-block nil
     (save-excursion
       (goto-char (point-max))
-      (let (block-start block-end)
+      (let (cl-block-start block-end)
 
         (while (not (funcall test (get-text-property (point) property-name) property-value))
           (when (= (point) (point-min))
             (if error
                 (error "Unable to find block with property %s %s to %s in buffer %s." property-name test property-value (current-buffer))
-              (return)))
+              (cl-return)))
           (backward-char 1))
         (setf block-end (min (1+ (point)) (point-max)))
 
-        (block nil
+        (cl-block nil
           (while (funcall test (get-text-property (point) property-name) property-value)
             (when (= (point) (point-min))
-              (return))
+              (cl-return))
             (backward-char 1))
           (forward-char 1))
         
         (cons (point) block-end)))))
 
-(defun* jss-delete-property-block (property-name property-value &key (test 'equal) (error t))
+(cl-defun jss-delete-property-block (property-name property-value &key (test 'equal) (error t))
   (let ((location (jss-find-property-block property-name property-value :test test :error error))
         (inhibit-read-only t))
     (when location
@@ -274,7 +276,7 @@ chars."
     (insert-and-inherit (apply 'format format-control format-args))
     (add-text-properties start (point) property-list)))
 
-(defmacro* jss-replace-with-default-property ((property-name property-value &key (test 'eq)) &body body)
+(cl-defmacro jss-replace-with-default-property ((property-name property-value &key (test 'eq)) &body body)
   "Find the block in the current buffer with the text-property
 `property-name` whose value is `property-value`, delete this
 block, move point to where the block was, run `body` and then add
@@ -319,7 +321,7 @@ back (from the old start to where `body` left point)"
       (insert-and-inherit thing)
     (funcall thing)))
 
-(defun* jss-toggling-visibility (header body &key (initially-visibile nil))
+(cl-defun jss-toggling-visibility (header body &key (initially-visibile nil))
   (let (header-start
         header-end
         body-start
@@ -330,7 +332,7 @@ back (from the old start to where `body` left point)"
     (setf body-start (point))
     (jss-funcall-or-insert body)
     (setf body-end (point))
-    (lexical-let ((body-overlay (make-overlay body-start body-end (current-buffer) t nil)))
+    (let ((body-overlay (make-overlay body-start body-end (current-buffer) t nil)))
       (jss-add-text-button header-start header-end
                            (lambda ()
                              (interactive)
@@ -352,7 +354,7 @@ back (from the old start to where `body` left point)"
   (overlay-put overlay 'invisible (not (overlay-get overlay 'invisible))))
 
 (defun jss-toggling-sections (button-a body-a button-b body-b)
-  (lexical-let (button-a-overlay
+  (let (button-a-overlay
                 body-a-overlay
                 button-b-overlay
                 body-b-overlay)
@@ -371,7 +373,7 @@ back (from the old start to where `body` left point)"
       (overlay-put button-b-overlay 'invisible t)
       (overlay-put body-b-overlay   'invisible t)
 
-      (lexical-let ((toggle-function (lambda ()
+      (let ((toggle-function (lambda ()
                                        (interactive)
                                        (jss-overlay-toggle-invisibile button-a-overlay)
                                        (jss-overlay-toggle-invisibile button-b-overlay)
@@ -386,7 +388,7 @@ back (from the old start to where `body` left point)"
                              (overlay-end button-b-overlay)
                              toggle-function)))))
 
-(defun* jss-completing-read (prompt choices
+(cl-defun jss-completing-read (prompt choices
                              &key (history nil) (require-match t)
                                   (initial-input nil))
   "Calls eiither ido-completing-read or completing-read depending
@@ -401,12 +403,12 @@ on the variable ido-mode."
     (let ((inhibit-read-only t))
       (apply 'insert insert-args))))
 
-(defmacro* jss-when-bind ((var value) &rest body)
+(cl-defmacro jss-when-bind ((var value) &rest body)
   `(jss-if-bind (,var ,value) (progn ,@body)))
 
 (put 'jss-when-bind 'lisp-indent-function 1)
 
-(defmacro* jss-if-bind ((var value) then &rest else)
+(cl-defmacro jss-if-bind ((var value) then &rest else)
   `(let ((,var ,value))
      (if ,var
          ,then
@@ -423,7 +425,7 @@ on the variable ido-mode."
     (and (string-match "^[0-9]+$" string)
          (string-to-number string))))
 
-(defmacro* jss-with-alist-values ((&rest keys) alist-form &body body)
+(cl-defmacro jss-with-alist-values ((&rest keys) alist-form &body body)
   (let ((alist-value (cl-gensym)))
     `(let ((,alist-value ,alist-form))
        (let ,(mapcar (lambda (key)
@@ -438,13 +440,13 @@ on the variable ido-mode."
 (defun make-jss-queue ()
   (make-instance 'jss-queue))
 
-(defmethod jss-enqueue ((q jss-queue) item)
+(cl-defmethod jss-enqueue ((q jss-queue) item)
   (setf (slot-value q 'list) (append (slot-value q 'list) (list item))))
 
-(defmethod jss-dequeue ((q jss-queue))
+(cl-defmethod jss-dequeue ((q jss-queue))
   (pop (slot-value q 'list)))
 
-(defmethod jss-queue-empty-p ((q jss-queue))
+(cl-defmethod jss-queue-empty-p ((q jss-queue))
   (null (slot-value q 'list)))
 
 (provide 'jss-utils)

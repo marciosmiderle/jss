@@ -1,4 +1,4 @@
-;;; jss.el --- An emacs interface to webkit and mozilla debuggers
+;;; jss.el --- An emacs interface to webkit and mozilla debuggers  -*- lexical-binding:t -*-
 
 ;; Copyright (C) 2013 Edward Marco Baringer
 
@@ -24,11 +24,11 @@
 
 ;;; Commentary:
 
-;; An emacs implementation of the client side protocol of webkit and
+;; An Emacs implementation of the client side protocol of webkit and
 ;; firefox's over-the-wire debugging protocols.
 
-;; jsSlime (jss for short) is designed for emacs users who program web
-;; based javascript applications. It connects directly to the browser
+;; jsSlime (jss for short) is designed for Emacs users who program web
+;; based javascript applications.  It connects directly to the browser
 ;; and uses the tools (debugger, inspector, source code browsing,
 ;; evaluator, etc.) as they are in the browser.
 

@@ -1,4 +1,4 @@
-;;; jss-browser.el -- jss mode for viewing information about a running browser
+;;; jss-browser.el -- jss mode for viewing information about a running browser  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -17,7 +17,10 @@
 ;; Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 ;; MA 02111-1307 USA
 
-(require 'cl)
+;;; Commentary:
+;;; Code:
+
+(require 'cl-lib)
 (require 'eieio)
 (require 'jss-utils)
 (require 'jss-browser-api)
@@ -88,10 +91,10 @@ available tabs, and reinsert buttons to consoles (if
 applicable)."
   (interactive)
   
-  (lexical-let* ((browser (jss-current-browser))
-                 (jss-browser-buffer (current-buffer))
+  (let* ((browser (jss-current-browser))
+                 (current-jss-browser-buffer (current-buffer))
                  (tab-handler (lambda (browser)
-                                (with-current-buffer jss-browser-buffer
+                                (with-current-buffer current-jss-browser-buffer
                                   (let ((inhibit-read-only t))
                                     (jss-browser-delete-and-insert-header)
                                     (if (jss-browser-tabs browser)
@@ -113,16 +116,18 @@ applicable)."
                                       (jss-browser-insert-help-topics)
                                       (goto-char (point-min)))))))
                  (tab-error-handler (lambda (error)
-                                      (with-current-buffer jss-browser-buffer
+                                      (with-current-buffer current-jss-browser-buffer
                                         (let ((inhibit-read-only t))
                                           (jss-browser-delete-and-insert-header)
                                           (insert "\nConnection error:\n\n" (prin1-to-string error))
                                           (jss-browser-insert-help-topics)
                                           (goto-char (point-min))
                                           (signal (first error) (rest error)))))))
-    (setf buffer-read-only t
-          (jss-browser-buffer browser) (current-buffer))
-      
+    ;; (setf buffer-read-only t
+    ;;       (jss-browser-buffer browser) (current-buffer))
+    (setf buffer-read-only t)
+    (jss-set-browser-buffer browser (current-buffer))
+
     (let ((inhibit-read-only t))
       (jss-browser-delete-and-insert-header)
       (insert (format "[ Connecting to %s:%s... ]"
@@ -184,7 +189,7 @@ objects they need, and the default connection parameters."))
 (defvar jss-connect/select-browser-history '())
 
 ;;;###autoload
-(defun* jss-connect (browser-label &key host port)
+(cl-defun jss-connect (browser-label &key host port)
   "Query the user for a browser type, a host, and a port, and
 jump to its browser buffer."
   (interactive (list (let ((completion-ignore-case t))
@@ -197,7 +202,7 @@ jump to its browser buffer."
                                         (first jss-connect/select-browser-history)
                                         'jss-connect/select-browser-history))))
   (let ((browser-spec (cl-find browser-label jss-browsers :key 'jss-browser-spec-label :test 'string=)))
-    (assert browser-spec nil "Unable to find browser named %s" browser-spec)
+    (cl-assert browser-spec nil "Unable to find browser named %s" browser-spec)
     (let ((host (or host (read-from-minibuffer "Host: " (jss-browser-spec-default-host browser-spec))))
           (port (or port (read-from-minibuffer "Port: " (jss-browser-spec-default-port browser-spec)))))
       (with-current-buffer (get-buffer-create (format "*JSS Browser @%s:%s*" host port))

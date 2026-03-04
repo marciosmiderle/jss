@@ -1,4 +1,4 @@
-;;; jss-io-pretty-printers.el -- utility code for formating/highlighting/indenting browser responses
+;;; jss-io-pretty-printers.el -- utility code for formating/highlighting/indenting browser responses  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -17,12 +17,12 @@
 ;; Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 ;; MA 02111-1307 USA
 
-(require 'cl)
+(require 'cl-lib)
 (require 'json)
 
 (defvar jss-io-cleaners (make-hash-table :test 'equal))
 
-(defmacro* define-jss-io-cleaner (content-type (data) &body body)
+(cl-defmacro define-jss-io-cleaner (content-type (data) &body body)
   (declare (indent 2))
   (let ((type (cl-gensym)))
     `(let ((,type ',content-type))

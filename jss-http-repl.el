@@ -1,4 +1,4 @@
-;;; jss-http-repl.el -- major mode for sending http requests
+;;; jss-http-repl.el -- major mode for sending http requests  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -17,7 +17,7 @@
 ;; Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 ;; MA 02111-1307 USA
 
-(require 'cl)
+(require 'cl-lib)
 (require 'url)
 (require 'jss-utils)
 (require 'jss-super-mode)
@@ -143,7 +143,7 @@ but it can be used with any kind of HTTP request."
   "Face used to mark data that has been sent and is no longer editable."
   :group 'jss)
 
-(defun* jss-http-repl-new (&rest insert-args)
+(cl-defun jss-http-repl-new (&rest insert-args)
   (with-current-buffer (generate-new-buffer "*JSS HTTP REPL*")
     (jss-http-repl-mode)
     (apply 'jss-http-repl-insert-request insert-args)
@@ -156,7 +156,7 @@ but it can be used with any kind of HTTP request."
   (interactive)
   (switch-to-buffer (jss-http-repl-new :method "GET" :url initial-endpoint)))
 
-(defun* jss-http-repl-insert-request (&key header-string data-string url method http-version)
+(cl-defun jss-http-repl-insert-request (&key header-string data-string url method http-version)
   ;; (declare (ignore ssl))
   (unless (memq jss-http-repl-status (list :idle :closed))
     (error "Request in progress, can't insert new request."))
@@ -218,10 +218,10 @@ but it can be used with any kind of HTTP request."
 
 (defun jss-http-repl-goto-data-start ()
   (jss-http-repl-goto-header-end)
-  (block nil
+  (cl-block nil
     (while (get-text-property (point) 'jss-header-end-marker)
       (when (eobp)
-        (return))
+        (cl-return))
       (forward-char 1)))
   (point))
 
@@ -291,14 +291,14 @@ nil."
   (save-match-data
     (save-excursion
       (jss-http-repl-goto-header-start)
-      (block nil
+      (cl-block nil
         (while (not (jss-http-repl-in-header-line header-name))
           (forward-line 1)
           (when (looking-at "--request data follows this line--")
-            (return nil))
+            (cl-return nil))
           (when (eobp)
             (error "Buffer ended before be could find the header. Is the --request data-- line missing?")
-            (return)))
+            (cl-return)))
         (cons (line-beginning-position) (line-end-position))))))
 
 (defun jss-http-repl-goto-header (header-name)
@@ -344,10 +344,10 @@ simple insert is enough to insert a new header) and returns nil"
     (cond
      ((and (consp h)
            (string= header-name (car h)))
-      (return (cdr h)))
+      (cl-return (cdr h)))
      ((and (stringp h)
            (string= h header-name))
-      (return nil)))))
+      (cl-return nil)))))
 
 (defun jss-http-repl-request-read-header-value (header-name)
   (let ((reader (jss-http-repl-request-header-editor header-name)))
@@ -441,7 +441,7 @@ simple insert is enough to insert a new header) and returns nil"
 (defun jss-chars-to-string (&rest chars)
   (apply 'concat (mapcar 'char-to-string chars)))
 
-(defun* jss-http-repl-set-headers (header-string &key extra-headers)
+(cl-defun jss-http-repl-set-headers (header-string &key extra-headers)
   (delete-region (jss-http-repl-goto-header-start)
                  (jss-http-repl-goto-header-end))
   ;; the above delete-region leaves point at the beginning of the header block
@@ -452,7 +452,7 @@ simple insert is enough to insert a new header) and returns nil"
                                                 (jss-chars-to-string #x0a)
                                                 header-string))
   (insert header-string)
-  (loop
+  (cl-loop
    for (name . value) in extra-headers
    do (insert name ": " value "\n"))
   (jss-http-repl-goto-header-start)
@@ -471,7 +471,7 @@ simple insert is enough to insert a new header) and returns nil"
   (when data-string
     (insert data-string)))
 
-(defun* jss-http-repl-set-endpoint (&key url method http-version)
+(cl-defun jss-http-repl-set-endpoint (&key url method http-version)
   (let ((endpoint-location (jss-find-property-block 'jss-http-repl-endpoint t)))
     (let ((inhibit-read-only t))
       (goto-char (car endpoint-location))
@@ -490,7 +490,7 @@ simple insert is enough to insert a new header) and returns nil"
   (concat "Endpoint:\\s-*" jss-http-repl-request-method-regexp "\\s-+\\([^ \t]+?\\)\\(\\s-+HTTP/1\\.[01]\\)?\\s-*$")
   "Regexp which matches at the beginning of an endpoint line and binds, in two groups, the method and url.")
 
-(defun* jss-http-repl-get-endpoint ()
+(cl-defun jss-http-repl-get-endpoint ()
   (let ((endpoint-location (jss-find-property-block 'jss-http-repl-endpoint t)))
     (goto-char (car endpoint-location))
     (save-match-data
@@ -564,12 +564,12 @@ simple insert is enough to insert a new header) and returns nil"
   (interactive)
   (save-excursion
     (save-match-data
-      (block nil
+      (cl-block nil
         (goto-char change-start)
         
         (when (get-text-property (line-beginning-position) 'jss-http-repl-endpoint)
           (beginning-of-line)
-          (return (jss-http-repl-update-inferred-headers)))
+          (cl-return (jss-http-repl-update-inferred-headers)))
 
         (when (jss-http-repl-in-header-line "Host")
           (let ((loc (jss-find-property-block 'jss-http-repl-auto-host-line t :error nil)))
@@ -578,7 +578,7 @@ simple insert is enough to insert a new header) and returns nil"
                 (remove-text-properties (car loc) (cdr loc) (list 'jss-http-repl-auto-host-line t))))))
         
         (when (<= change-end (point))
-          (return))
+          (cl-return))
         
         (forward-line 1)))))
 
@@ -654,11 +654,11 @@ simple insert is enough to insert a new header) and returns nil"
   (interactive)
   (apply 'jss-request-submit (jss-http-repl-preflight)))
 
-(defun* jss-request-submit (&rest request-data)
+(cl-defun jss-request-submit (&rest request-data)
   (setf jss-http-repl-previous-request-data request-data
         jss-http-repl-status :opening)
 
-  (destructuring-bind (&key host port ssl &allow-other-keys)
+  (cl-destructuring-bind (&key host port ssl &allow-other-keys)
       request-data
     (make-network-process :name "jss-http-repl-request"
                           :server nil
@@ -679,7 +679,7 @@ simple insert is enough to insert a new header) and returns nil"
         (insert "\n"))
       (insert "--response headers follow this line--\n")))
   (setf jss-http-repl-status :sending)
-  (destructuring-bind (&key header-string data-bytes &allow-other-keys)
+  (cl-destructuring-bind (&key header-string data-bytes &allow-other-keys)
       jss-http-repl-previous-request-data
     (process-send-string proc (encode-coding-string header-string 'us-ascii-dos))
     (process-send-string proc (jss-chars-to-string #x0d #x0a))
@@ -704,7 +704,7 @@ simple insert is enough to insert a new header) and returns nil"
 (defun jss-http-repl-insert-next-request ()
   (let ((inhibit-read-only t))
     (insert "\n")
-    (destructuring-bind (&key header-string data-string url method http-version &allow-other-keys)
+    (cl-destructuring-bind (&key header-string data-string url method http-version &allow-other-keys)
         jss-http-repl-previous-request-data
       ;; just do this d-bind to ignore those element of
       ;; jss-http-repl-previous-request-data we don't need at this
@@ -729,7 +729,7 @@ simple insert is enough to insert a new header) and returns nil"
         (when (eql :receiving-headers jss-http-repl-status)
           (goto-char start)
           (beginning-of-line)
-          (block nil
+          (cl-block nil
             (while (not (eobp))
               (when (looking-at "Connection:\\s-*\\(.*\\)\\s-*$")
                 (setf jss-http-repl-keep-alive (string= "keep-alive" (downcase (match-string-no-properties 1)))))
@@ -745,7 +745,7 @@ simple insert is enough to insert a new header) and returns nil"
                   (insert "\n--response data follows this line--\n"))
                 (setf jss-http-repl-status :receiving-data
                       jss-http-repl-response-data-start (point))
-                (return))
+                (cl-return))
               (forward-line 1))))
         (when (eql :receiving-data jss-http-repl-status)
           (goto-char (point-max))

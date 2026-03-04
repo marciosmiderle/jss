@@ -1,4 +1,4 @@
-;;; jss-io.el -- major mode for viewing browser request/response pairs
+;;; jss-io.el -- major mode for viewing browser request/response pairs  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -17,8 +17,7 @@
 ;; Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 ;; MA 02111-1307 USA
 
-(eval-when-compile
-  (require 'cl))
+(require 'cl-lib)
 (require 'eieio)
 (require 'jss-browser-api)
 (require 'jss-io-pretty-printers)
@@ -131,17 +130,17 @@ raw] button to show the actual bytes sent back from the server."
 
 (define-key jss-io-mode-map (kbd "q") (lambda () (interactive) (kill-buffer (current-buffer))))
 
-(defun* jss-io-insert-header-table (header-alist &key indent)
+(cl-defun jss-io-insert-header-table (header-alist &key indent)
   (when header-alist
     (let* ((headers (mapcar (lambda (h)
                               (if (stringp (car h))
                                   (cons (car h) (cdr h))
                                 (cons (format "%s" (car h)) (cdr h))))
                             header-alist))
-           (longest-key (loop
+           (longest-key (cl-loop
                          for header in headers
                          for max = (max (or max 0) (length (car header)))
-                         finally (return (+ 4 max)))))
+                         finally (cl-return (+ 4 max)))))
       (dolist (header headers)
         (let ((start (point)))
           (when indent
@@ -166,7 +165,7 @@ raw] button to show the actual bytes sent back from the server."
         (jss-io-mode)))
     (display-buffer (jss-io-buffer io))))
 
-(defmethod jss-io-insert-response-data ((io jss-generic-io))
+(cl-defmethod jss-io-insert-response-data ((io jss-generic-io))
   (let* ((content-type (jss-io-response-content-type io))
          (cleaner (gethash content-type jss-io-cleaners))
          (response-data (jss-io-response-data io))

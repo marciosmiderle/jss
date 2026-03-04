@@ -1,4 +1,4 @@
-;;; jss-browser-firefox.el -- firefox implementation of jss's browser api
+;;; jss-browser-firefox.el -- firefox implementation of jss's browser api  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -94,7 +94,7 @@
 ;;; 
 ;;;   must follow aTabActor.attach (i think)
 
-(require 'cl)
+(require 'cl-lib)
 (require 'eieio)
 (require 'json)
 (require 'jss-browser-api)
@@ -104,41 +104,38 @@
    (RootActor :accessor jss-firefox-browser-RootActor)
    (connected :accessor jss-browser-connected-p :initform nil)))
 
-(defmethod jss-browser-description ((browser jss-firefox-browser))
+(cl-defmethod jss-browser-description ((browser jss-firefox-browser))
   (format "Mozilla Firefox @ %s:%s\nNB: Only displaying tabs that can be debugged."
           (slot-value browser 'host) (slot-value browser 'port)))
 
-(defmethod jss-browser-cleanup ((browser jss-firefox-browser))
+(cl-defmethod jss-browser-cleanup ((browser jss-firefox-browser))
   (jss-log-event (list :firefox :browser :cleanup browser))
   (setf (jss-browser-connected-p browser) nil)
   (jss-when-bind (conn (jss-firefox-browser-connection browser))
     (jss-firefox-connection-disconnect (jss-firefox-browser-connection browser))))
 
-(defmethod jss-browser-find-tab ((browser jss-firefox-browser) tab-id)
+(cl-defmethod jss-browser-find-tab ((browser jss-firefox-browser) tab-id)
   (cl-find tab-id (slot-value browser 'tabs) :key 'jss-tab-id :test 'string=))
 
-(defmethod jss-browser-tabs ((browser jss-firefox-browser))
+(cl-defmethod jss-browser-tabs ((browser jss-firefox-browser))
   (slot-value browser 'tabs))
 
-(defmethod jss-browser-get-tabs ((browser jss-firefox-browser))
-  (lexical-let ((browser browser)
-                (tabs-deferred (make-jss-deferred)))
+(cl-defmethod jss-browser-get-tabs ((browser jss-firefox-browser))
+  (let ((browser browser)
+        (tabs-deferred (make-jss-deferred)))
     (jss-deferred-then
      (jss-firefox-send-message (jss-firefox-browser-RootActor browser) "listTabs")
      (lambda (response)
-       (loop for properites across (cdr (assoc 'tabs response))
+       (cl-loop for properites across (cdr (assoc 'tabs response))
              for existing-tab = (jss-browser-find-tab browser (cdr (assoc 'actor properites)))
              if existing-tab
-               do (let ((current-consoleActor (cdr (assoc 'consoleActor (slot-value existing-tab 'properites))))
-                        (new-consoleActor (cdr (assoc 'consoleActor properites))))
-                    (unless (string= current-consoleActor new-consoleActor)
-                      (error "Console Actor has unexpectedly changed on %s. from %s to %s" existing-tab current-consoleActor new-consoleActor))
-                    (setf (slot-value existing-tab 'properites) properites))
+               ;; Update properties only; consoleActor no longer in modern Firefox listTabs
+               do (setf (slot-value existing-tab 'properites) properites)
              else
                do (push (make-instance 'jss-firefox-tab
                                        :properties properites
                                        :browser browser)
-                        (slot-value browser 'tabs)) 
+                        (slot-value browser 'tabs))
              finally (jss-log-event (list :firefox :tabsListed (jss-browser-tabs browser)))
              finally (jss-deferred-callback tabs-deferred browser))))
     tabs-deferred))
@@ -155,7 +152,7 @@
    
    (actors :initform (make-hash-table :test 'equal) :accessor jss-firefox-connection-actors)))
 
-(defmethod jss-firefox-connection-disconnect ((conn jss-firefox-connection))
+(cl-defmethod jss-firefox-connection-disconnect ((conn jss-firefox-connection))
   (message "Closing firefox connection to %s:%s" (slot-value conn 'host) (slot-value conn 'port))
   (unless (slot-boundp conn 'proc)
     (error "Attempting to disconnect connection %s but the proc slot is not bound." conn))
@@ -180,12 +177,12 @@
 (defclass jss-firefox-RootActor (jss-firefox-actor)
   ((ready-deferred :initform (make-jss-deferred) :accessor jss-firefox-RootActor-ready-deferred)))
 
-(defmethod shared-initialize :after ((actor jss-firefox-RootActor) slot-names)
+(cl-defmethod shared-initialize :after ((actor jss-firefox-RootActor) slot-names)
   (unless (slot-boundp actor 'id)
     (setf (jss-firefox-actor-id actor) "root")))
 
-(defmethod jss-browser-connect ((browser jss-firefox-browser))
-  (lexical-let ((browser browser)
+(cl-defmethod jss-browser-connect ((browser jss-firefox-browser))
+  (let ((browser browser)
                 (RootActor (make-instance 'jss-firefox-RootActor
                                           :state :listening)))
     (let* ((conn (make-instance 'jss-firefox-connection
@@ -216,7 +213,7 @@
 
       (jss-firefox-RootActor-ready-deferred RootActor))))
 
-(defmethod jss-firefox-connection-send-string ((conn jss-firefox-connection) json)
+(cl-defmethod jss-firefox-connection-send-string ((conn jss-firefox-connection) json)
   (process-send-string (slot-value conn 'proc) json))
 
 (defun jss-firefox-process-filter (proc string)
@@ -227,10 +224,10 @@
         (goto-char (point-max))
         (insert string)
 
-        (loop
+        (cl-loop
          do (goto-char (point-min))
          when (eobp)
-           do (return t)
+           do (cl-return t)
          unless (looking-at "\\([0-9]+\\):")
            do (error "jss process filter syntax error, message at %s does not start with \\d+" (point))
          do (let ((prefix (match-string 0))
@@ -243,7 +240,7 @@
                     (jss-firefox-handle-message jss-current-connection-instance json)
                     (goto-char (point-min)))
                 (jss-log-event (list :firefox :process-filter :message-incomplete))
-                (return nil))))))))
+                (cl-return nil))))))))
 
 (defun jss-firefox-process-sentinel (proc event)
   (jss-log-event (list :firefox :sentinel proc event))
@@ -262,12 +259,12 @@
                         (error "Invalid state transition. Was %s but got a %s event on %s." state event proc))
                       :closed)
                      (t (error "Unknown process event %s" (prin1-to-string event)))))
-        (ecase state
+        (cl-ecase state
           (:open (jss-firefox-connection-on-open connection))
           (:closed (jss-firefox-connection-on-close connection))))))
   t)
 
-(defmethod jss-firefox-connection-connect ((conn jss-firefox-connection))
+(cl-defmethod jss-firefox-connection-connect ((conn jss-firefox-connection))
   (when (slot-boundp conn 'proc)
     (error "Attempting to connect to %s but it already has a process." conn))
   (with-slots (host port proc open-deferred close-deferred)
@@ -295,13 +292,13 @@
       (setf jss-current-connection-instance conn)))
   conn)
 
-(defmethod jss-firefox-connection-on-open ((conn jss-firefox-connection))
+(cl-defmethod jss-firefox-connection-on-open ((conn jss-firefox-connection))
   (unless (slot-boundp conn 'open-deferred)
     (error "Connection %s has opened, but no open-deferred availble. state mis-match?" conn))
   (jss-deferred-callback (slot-value conn 'open-deferred) conn)
   (slot-makeunbound conn 'open-deferred))
 
-(defmethod jss-firefox-connection-on-close ((conn jss-firefox-connection))
+(cl-defmethod jss-firefox-connection-on-close ((conn jss-firefox-connection))
   (jss-log-event (list :firefox :connection :on-close conn))
   (unless (slot-boundp conn 'close-deferred)
     (error "Connection %s has closed, but no close-deferred availble. state mis-match?" conn))
@@ -317,15 +314,17 @@
     (jss-deferred-callback close-deferred conn)
     (slot-makeunbound conn 'close-deferred)))
 
-(defmethod jss-firefox-register-actor ((connection jss-firefox-connection) actor)
-  (when (jss-firefox-actor-connection actor)
+(cl-defmethod jss-firefox-register-actor ((connection jss-firefox-connection) actor)
+  ;;(when (jss-firefox-actor-connection actor)
+  (when (and (slot-boundp actor 'connection)
+             (jss-firefox-actor-connection actor))
     (error "Attempting to register actor %s on %s, but it is already register on %s."
            actor connection (jss-firefox-actor-connection actor)))
   (setf (jss-firefox-actor-connection actor) connection
         (gethash (jss-firefox-actor-id actor) (jss-firefox-connection-actors connection)) actor)
   actor)
 
-(defmethod jss-firefox-register-actor ((browser jss-firefox-browser) actor)
+(cl-defmethod jss-firefox-register-actor ((browser jss-firefox-browser) actor)
   (jss-firefox-register-actor (jss-firefox-browser-connection browser) actor))
 
 (defun jss-firefox-actor-state-transition (actor from to)
@@ -333,45 +332,45 @@
       (setf (jss-firefox-actor-state actor) to)
     (error "Invalid state transition for actor. Current state is %s (not %s), can not go to %s." (jss-firefox-actor-state actor) from to)))
 
-(defmethod jss-firefox-actor-start-listening ((actor jss-firefox-actor))
+(cl-defmethod jss-firefox-actor-start-listening ((actor jss-firefox-actor))
   (jss-firefox-actor-state-transition actor :idle :listening))
 
-(defmethod jss-firefox-actor-stop-listening ((actor jss-firefox-actor))
+(cl-defmethod jss-firefox-actor-stop-listening ((actor jss-firefox-actor))
   (jss-firefox-actor-state-transition actor :listening :idle))
 
-(defmethod jss-firefox-actor-handle-event :before ((actor jss-firefox-actor) event-json)
+(cl-defmethod jss-firefox-actor-handle-event :before ((actor jss-firefox-actor) event-json)
   (when (eql :idle (jss-firefox-actor-state actor))
     (error "Actor is not ready to handle messages (current state is :idle).")))
 
-(defmethod jss-firefox-actor-handle-event ((actor jss-firefox-actor) event-json)
+(cl-defmethod jss-firefox-actor-handle-event ((actor jss-firefox-actor) event-json)
   (error "Actor %s has no handle-event method (got event %s)." actor event-json))
 
-(defmacro* jss-firefox-event-type-ecase ((event &key (key ''type)) &rest clauses)
+(cl-defmacro jss-firefox-event-type-ecase ((event &key (key ''type)) &rest clauses)
   (let ((e (cl-gensym))
         (k (cl-gensym)))
     `(let ((,e ,event)
            (,k ,key))
        (cond
-        ,@(loop for (type . body) in clauses
+        ,@(cl-loop for (type . body) in clauses
                 for types = (if (listp type) type (list type))
-                collect (list* `(or ,@(loop for type in types collect `(string= ,type (cdr (assoc ,k ,e)))))
+                collect (list* `(or ,@(cl-loop for type in types collect `(string= ,type (cdr (assoc ,k ,e)))))
                                body))
         (t
          (error "Unknown message type %s in event %s." (cdr (assoc 'type ,e)) ,e))))))
 (put 'jss-firefox-event-type-ecase 'lisp-indent-function 1)
 
-(defmethod jss-firefox-send-message ((actor jss-firefox-actor) type &rest other-arguments)
+(cl-defmethod jss-firefox-send-message ((actor jss-firefox-actor) type &rest other-arguments)
   ; (jss-log-event (list :firefox :send-message actor type other-arguments))
 ;  (when (eql :listening (jss-firefox-actor-state actor))
 ;    (error "Attempt to send message %s to %s but this actor is currently listening." type actor))
-  (lexical-let ((previous-state (jss-firefox-actor-state actor)))
+  (let ((previous-state (jss-firefox-actor-state actor)))
     (setf (jss-firefox-actor-state actor) :idle)
     (unless (slot-boundp actor 'id)
       (error "Attempt to send message %s to %s, but this actor has no id." type actor))
     (let* ((deferred (make-jss-deferred))
            (message (list* (cons "to" (jss-firefox-actor-id actor))
                            (cons "type" type)
-                           (loop
+                           (cl-loop
                             for (key value) on other-arguments by 'cddr
                             collect (cons key value)))))
       (jss-enqueue (jss-firefox-actor-message-queue actor) (cons message deferred))
@@ -388,9 +387,9 @@
     (let ((string (json-encode object)))
       (format "%d:%s" (length string) string))))
 
-(defmethod jss-firefox-connection-process-next-message ((actor jss-firefox-actor))
+(cl-defmethod jss-firefox-connection-process-next-message ((actor jss-firefox-actor))
   (when (eql :idle (jss-firefox-actor-state actor))
-    (destructuring-bind (message . deferred)
+    (cl-destructuring-bind (message . deferred)
         (jss-dequeue (jss-firefox-actor-message-queue actor))
       (let ((json (jss-firefox-encode-json-message message)))
         (jss-log-event (list :firefox :process-message (jss-firefox-actor-id actor) message json deferred))
@@ -399,28 +398,30 @@
         (jss-firefox-connection-send-string (jss-firefox-actor-connection actor) json)
         actor))))
 
-(defmethod jss-firefox-handle-message ((connection jss-firefox-connection) json)
+(cl-defmethod jss-firefox-handle-message ((connection jss-firefox-connection) json)
   ;(jss-log-event (list :firefox :handle-message json))
   (jss-with-alist-values (from)
       json
     (let ((actor (gethash from (jss-firefox-connection-actors connection))))
-      (unless actor
-        (error "Got message %s but don't have an actor with id %s." json from))
-      (ecase (jss-firefox-actor-state actor)
-        (:idle
-         (error "Got message %s for %s, but actor's state is :idle." json actor))
-        (:waiting
-         (let ((deferred (jss-firefox-actor-response-deferred actor)))
-           (unless deferred
-             (error "Got message %s for %s, whose state is infact :waiting, but no response-handler found." json actor))
-           (setf (jss-firefox-actor-state actor) :idle
-                 (jss-firefox-actor-response-deferred actor) nil)
-           (jss-deferred-callback deferred json)))
-        (:listening
-         (jss-log-event (list :firefox :unsolicited-event actor json))
-         (jss-firefox-actor-handle-event actor json))))))
+      (if (null actor)
+          ;; Modern Firefox (Watcher API) sends unsolicited events from actors we
+          ;; never registered (windowGlobalTarget, etc.). Silently ignore them.
+          (jss-log-event (list :firefox :unknown-actor from json))
+        (cl-ecase (jss-firefox-actor-state actor)
+          (:idle
+           (error "Got message %s for %s, but actor's state is :idle." json actor))
+          (:waiting
+           (let ((deferred (jss-firefox-actor-response-deferred actor)))
+             (unless deferred
+               (error "Got message %s for %s, whose state is infact :waiting, but no response-handler found." json actor))
+             (setf (jss-firefox-actor-state actor) :idle
+                   (jss-firefox-actor-response-deferred actor) nil)
+             (jss-deferred-callback deferred json)))
+          (:listening
+           (jss-log-event (list :firefox :unsolicited-event actor json))
+           (jss-firefox-actor-handle-event actor json)))))))
 
-(defmethod jss-firefox-actor-handle-event ((actor jss-firefox-RootActor) event)
+(cl-defmethod jss-firefox-actor-handle-event ((actor jss-firefox-RootActor) event)
   (jss-with-alist-values (applicationType traits)
       event
     (unless (string= "browser" applicationType)
@@ -435,69 +436,77 @@
 
 (defclass jss-firefox-tab (jss-generic-tab)
   ((properites :initarg :properties)
-   (Actor :accessor jss-firefox-tab-Actor)
-   (ConsoleActor :accessor jss-firefox-tab-ConsoleActor)
-   (ThreadActor :accessor jss-firefox-tab-ThreadActor)
+   (Actor :accessor jss-firefox-tab-Actor :initform nil)
+   (ConsoleActor :accessor jss-firefox-tab-ConsoleActor :initform nil)
+   (ThreadActor :accessor jss-firefox-tab-ThreadActor :initform nil)
+   (connect-deferred :accessor jss-firefox-tab-connect-deferred :initform nil)
 
    (scripts :accessor jss-firefox-tab-scripts :initform (make-hash-table))))
 
-(defmethod jss-firefox-register-actor ((tab jss-firefox-tab) actor)
+(cl-defmethod jss-firefox-register-actor ((tab jss-firefox-tab) actor)
   (jss-firefox-register-actor (jss-tab-browser tab) actor))
 
-(defmethod shared-initialize :after ((tab jss-firefox-tab) slots)
+(cl-defmethod shared-initialize :after ((tab jss-firefox-tab) slots)
   (when (and (slot-boundp tab 'browser)
              (slot-boundp tab 'properites))
     (jss-with-alist-values (actor consoleActor)
         (slot-value tab 'properites)
 
-      (unless (and actor consoleActor)
-        (error "Attempting to create a tab from properties %s, but required fields actor and consoleActor are missing."
-               (slot-value tab 'properties)))
+      (unless actor
+        (error "Attempting to create a tab from properties %s, but required field actor is missing."
+               (slot-value tab 'properites)))
 
-      (message "actor: %s, consoleActor: %s" actor consoleActor)
-      
+      (message "tab properties: %s" (slot-value tab 'properites))
+
       (let ((browser (jss-tab-browser tab)))
         (setf (jss-firefox-tab-Actor tab)
-              (jss-firefox-register-actor browser (make-instance 'jss-firefox-TabActor :id actor :tab tab))
-              (jss-firefox-tab-ConsoleActor tab)
-              (jss-firefox-register-actor browser (make-instance 'jss-firefox-ConsoleActor
-                                                                 :id consoleActor)))))))
+              (jss-firefox-register-actor browser (make-instance 'jss-firefox-TabActor :id actor :tab tab)))
+        ;; consoleActor not present in modern Firefox listTabs; obtained via attach
+        (when consoleActor
+          (setf (jss-firefox-tab-ConsoleActor tab)
+                (jss-firefox-register-actor browser (make-instance 'jss-firefox-ConsoleActor
+                                                                   :id consoleActor))))))))
 
-(defmethod jss-firefox-tab-property ((tab jss-firefox-tab) property-name)
+(cl-defmethod jss-firefox-tab-property ((tab jss-firefox-tab) property-name)
   (cdr (assoc property-name (slot-value tab 'properites))))
 
-(defmethod jss-firefox-tab-set-property ((tab jss-firefox-tab) property-name property-value)
+(cl-defmethod jss-firefox-tab-set-property ((tab jss-firefox-tab) property-name property-value)
   (setf (cdr (assoc property-name (slot-value tab 'properites))) property-value))
 
-(defmethod jss-tab-url ((tab jss-firefox-tab))
+(cl-defmethod jss-tab-url ((tab jss-firefox-tab))
   (jss-firefox-tab-property tab 'url))
 
-(defmethod jss-tab-set-url ((tab jss-firefox-tab) url)
+(cl-defmethod jss-tab-set-url ((tab jss-firefox-tab) url)
   (jss-firefox-tab-set-property tab 'url url))
 
-(defmethod jss-tab-title ((tab jss-firefox-tab))
+(cl-defmethod jss-tab-title ((tab jss-firefox-tab))
   (jss-firefox-tab-property tab 'title))
 
-(defmethod jss-tab-set-title ((tab jss-firefox-tab) title)
+(cl-defmethod jss-tab-set-title ((tab jss-firefox-tab) title)
   (jss-firefox-tab-set-property tab 'title title))
 
-(defmethod jss-tab-id ((tab jss-firefox-tab))
+(cl-defmethod jss-tab-id ((tab jss-firefox-tab))
   (jss-firefox-actor-id (jss-firefox-tab-Actor tab)))
 
-(defmethod jss-tab-available-p ((tab jss-firefox-tab))
-  (not (null (jss-firefox-tab-property tab 'consoleActor))))
+(cl-defmethod jss-tab-available-p ((tab jss-firefox-tab))
+  ;; In modern Firefox, consoleActor is not in listTabs response.
+  ;; A tab is available if it has a valid Actor.
+  (not (null (jss-firefox-tab-Actor tab))))
 
-(defmethod jss-firefox-make-actor ((tab jss-firefox-tab) id)
+(cl-defmethod jss-firefox-make-actor ((tab jss-firefox-tab) id)
   (jss-firefox-make-actor (jss-tab-browser tab) id))
 
-(defmethod jss-tab-connected-p ((tab jss-firefox-tab))
-  (eql :listening (jss-firefox-actor-state (jss-firefox-tab-ConsoleActor tab))))
+(cl-defmethod jss-tab-connected-p ((tab jss-firefox-tab))
+  (and (jss-firefox-tab-ConsoleActor tab)
+       (eql :listening (jss-firefox-actor-state (jss-firefox-tab-ConsoleActor tab)))))
 
 (defclass jss-firefox-actor-with-console-mixin ()
   ((console :accessor jss-firefox-ConsoleActor-console :initarg :console)))
 
 (defclass jss-firefox-ConsoleActor (jss-firefox-actor jss-firefox-actor-with-console-mixin)
-  ())
+  ((pending-evals :initform (make-hash-table :test 'equal)
+                  :accessor jss-firefox-ConsoleActor-pending-evals
+                  :documentation "Maps resultID -> deferred for evaluateJSAsync.")))
 
 (defclass jss-firefox-tab-actor-mixin ()
   ((tab :accessor jss-firefox-actor-tab :initarg :tab)))
@@ -505,60 +514,81 @@
 (defclass jss-firefox-NetworkEvent (jss-firefox-actor jss-firefox-actor-with-console-mixin jss-firefox-tab-actor-mixin)
   ())
 
-(defmethod jss-tab-connect ((tab jss-firefox-tab))
-  (lexical-let ((tab tab)
-                (deferred (make-jss-deferred))
-                (requested-listeners ["ConsoleAPI" "FileActivity" "LocationChange" "NetworkActivity" "PageError"]))
-    ;; setup the console link because we need the ConsoleActor before we have the jss-generic-console object
-    (setf (jss-firefox-ConsoleActor-console (jss-firefox-tab-ConsoleActor tab)) (jss-tab-console tab))
-    ;; create the chain of deferreds to actually perform the connection steps in order
-    (jss-deferred-then
-     (jss-firefox-send-message (jss-firefox-tab-Actor tab) "attach")
-     (lambda (response)
-       (jss-with-alist-values (type threadActor)
-           response
-         (unless (string= "tabAttached" type)
-           (error "Unexpected response to %s.attach: %s" (jss-tab-id tab) response))
-         (jss-firefox-actor-start-listening (jss-firefox-tab-Actor tab))
-         (lexical-let ((ThreadActor (make-instance 'jss-firefox-ThreadActor :id threadActor :tab tab)))
-           (setf (jss-firefox-tab-ThreadActor tab)
-                 (jss-firefox-register-actor (jss-tab-browser tab) ThreadActor))
-           (jss-deferred-then
-            (jss-firefox-send-message ThreadActor "attach")
-            (lambda (response)
-              (unless (and (string= "paused" (cdr (assoc 'type response)))
-                           (cdr (assoc 'type (cdr (assoc 'why response))))
-                           (string= "attached" (cdr (assoc 'type (cdr (assoc 'why response))))))
-                (error "Unexpected response from attach message: %s." response))
-              (jss-deferred-then
-               (jss-firefox-send-message ThreadActor "resume" "pauseOnExceptions" t)
-               (lambda (response)
-                 (jss-firefox-actor-start-listening ThreadActor)
-                 (jss-deferred-then
-                  (jss-firefox-send-message (jss-firefox-console-Actor (jss-tab-console tab))
-                                            "startListeners"
-                                            "listeners"
-                                            requested-listeners)
-                  (lambda (response)
-                    (jss-with-alist-values (startedListeners)
-                        response
-                      (unless (equal requested-listeners (cl-sort startedListeners 'string<))
-                        (error "Not all listeners started, only: %s" startedListeners))
-                      (jss-firefox-actor-start-listening (jss-firefox-tab-ConsoleActor tab))
-                      (jss-deferred-callback deferred tab))))))))))))
-    deferred))
+;; Helper: start console listeners and complete the connection deferred.
+(defun jss-firefox-connect-console (tab deferred requested-listeners)
+  (if (jss-firefox-tab-ConsoleActor tab)
+      (jss-deferred-then
+       (jss-firefox-send-message (jss-firefox-tab-ConsoleActor tab)
+                                 "startListeners"
+                                 "listeners"
+                                 requested-listeners)
+       (lambda (response)
+         (when (cdr (assoc 'error response))
+           (message "jss startListeners partial error (continuing): %s"
+                    (cdr (assoc 'message response))))
+         ;; Mark ConsoleActor as listening regardless - some listeners may
+         ;; have succeeded even if others (NetworkActivity) are not supported.
+         (jss-firefox-actor-start-listening (jss-firefox-tab-ConsoleActor tab))
+         (jss-deferred-callback deferred tab)))
+    (jss-deferred-callback deferred tab)))
+
+(cl-defmethod jss-tab-connect ((tab jss-firefox-tab))
+  ;; Guard against concurrent connect calls
+  (or (jss-firefox-tab-connect-deferred tab)
+      (let ((tab tab)
+            (deferred (make-jss-deferred))
+            (requested-listeners ["ConsoleAPI" "LocationChange" "PageError"]))
+        (setf (jss-firefox-tab-connect-deferred tab) deferred)
+        ;; Modern Firefox (Watcher API): tabDescriptor responds to "getTarget",
+        ;; which returns a 'frame' alist with consoleActor and threadActor.
+        ;; The old "attach" message is no longer accepted by tabDescriptor.
+        (jss-deferred-then
+         (jss-firefox-send-message (jss-firefox-tab-Actor tab) "getTarget")
+         (lambda (response)
+           (message "jss getTarget response: %s" response)
+           (when (cdr (assoc 'error response))
+             (message "jss getTarget error: %s" response)
+             (jss-deferred-callback deferred tab)
+             (cl-return-from jss-tab-connect nil))
+           (let* ((target       (or (cdr (assoc 'frame response)) response))
+                  (consoleActor (cdr (assoc 'consoleActor target)))
+                  (threadActor  (cdr (assoc 'threadActor  target))))
+             (message "jss target actors: console=%s thread=%s" consoleActor threadActor)
+             ;; Register ConsoleActor
+             (when (and consoleActor (null (jss-firefox-tab-ConsoleActor tab)))
+               (setf (jss-firefox-tab-ConsoleActor tab)
+                     (jss-firefox-register-actor
+                      (jss-tab-browser tab)
+                      (make-instance 'jss-firefox-ConsoleActor :id consoleActor))))
+             ;; Link console<->ConsoleActor if console already exists
+             (when (and (jss-firefox-tab-ConsoleActor tab) (jss-tab-console tab))
+               (setf (jss-firefox-ConsoleActor-console (jss-firefox-tab-ConsoleActor tab))
+                     (jss-tab-console tab)))
+             ;; Register ThreadActor if present.
+             ;; Modern Firefox: thread comes pre-attached via getTarget, so we
+             ;; just register it and start listening without sending "attach".
+             (if threadActor
+                 (let ((ThreadActor (make-instance 'jss-firefox-ThreadActor
+                                                   :id threadActor :tab tab)))
+                   (setf (jss-firefox-tab-ThreadActor tab)
+                         (jss-firefox-register-actor (jss-tab-browser tab) ThreadActor))
+                   (jss-firefox-actor-start-listening ThreadActor)
+                   (jss-firefox-connect-console tab deferred requested-listeners))
+               ;; No ThreadActor -- go straight to console
+               (jss-firefox-connect-console tab deferred requested-listeners)))))
+        deferred)))
 
 (defclass jss-firefox-TabActor (jss-firefox-actor jss-firefox-tab-actor-mixin)
   ())
 
-(defmethod jss-firefox-actor-handle-event ((actor jss-firefox-TabActor) event)
+(cl-defmethod jss-firefox-actor-handle-event ((actor jss-firefox-TabActor) event)
   (jss-firefox-event-type-ecase (event)
     ("tabNavigated" (jss-console-log-message (jss-tab-console (jss-firefox-actor-tab actor)) "Navigated to %s" (cdr (assoc 'url event))))))
 
 (defclass jss-firefox-ThreadActor (jss-firefox-actor)
   ((tab :accessor jss-firefox-ThreadActor-tab :initarg :tab)))
 
-(defmethod jss-firefox-actor-handle-event ((actor jss-firefox-ThreadActor) event)
+(cl-defmethod jss-firefox-actor-handle-event ((actor jss-firefox-ThreadActor) event)
   (jss-firefox-event-type-ecase (event)
     ("newGlobal" (message "newGlobal message. what do we do now?"))
     ("newScript"
@@ -577,13 +607,20 @@
 (defclass jss-firefox-console (jss-generic-console)
   ())
 
-(defmethod jss-firefox-console-Actor ((console jss-firefox-console))
-  (jss-firefox-tab-ConsoleActor (jss-console-tab console)))
+(cl-defmethod jss-firefox-console-Actor ((console jss-firefox-console))
+  (let* ((tab (jss-console-tab console))
+         (actor (jss-firefox-tab-ConsoleActor tab)))
+    ;; Ensure ConsoleActor points back to this console (lazy link)
+    (when (and actor
+               (or (not (slot-boundp actor 'console))
+                   (null (jss-firefox-ConsoleActor-console actor))))
+      (setf (jss-firefox-ConsoleActor-console actor) console))
+    actor))
 
-(defmethod jss-tab-make-console ((tab jss-firefox-tab) &rest initargs)
+(cl-defmethod jss-tab-make-console ((tab jss-firefox-tab) &rest initargs)
   (apply 'make-instance jss-firefox-console initargs))
 
-(defmethod jss-console-disconnect ((console jss-firefox-console))
+(cl-defmethod jss-console-disconnect ((console jss-firefox-console))
   (make-jss-completed-deferred console))
 
 (defclass jss-firefox-io (jss-generic-io)
@@ -596,10 +633,10 @@
    (headersSize)
    (discardResponseBody)))
 
-(defmethod jss-io-id ((io jss-firefox-io))
+(cl-defmethod jss-io-id ((io jss-firefox-io))
   (jss-firefox-actor-id (jss-generic-io-NetworkActor io)))
 
-(defmethod jss-firefox-actor-handle-event ((NetworkEvent jss-firefox-NetworkEvent) event)
+(cl-defmethod jss-firefox-actor-handle-event ((NetworkEvent jss-firefox-NetworkEvent) event)
   (jss-firefox-event-type-ecase (event)
     ("networkEventUpdate"
      (with-existing-io ((jss-firefox-actor-tab NetworkEvent) (jss-firefox-actor-id NetworkEvent))
@@ -649,7 +686,7 @@
                                                         (string-to-number year)))
                           (string-to-number seconds))))))
 
-(defmethod jss-firefox-actor-handle-event ((ConsoleActor jss-firefox-ConsoleActor) event)
+(cl-defmethod jss-firefox-actor-handle-event ((ConsoleActor jss-firefox-ConsoleActor) event)
   (unless  (jss-firefox-ConsoleActor-console ConsoleActor)
     (error "ConsoleActor without a console. die. %s" ConsoleActor))
   (let* ((console (jss-firefox-ConsoleActor-console ConsoleActor))
@@ -662,53 +699,89 @@
                                                                    class
                                                                    :console console
                                                                    make-instance-args))))
-      (jss-firefox-event-type-ecase (event)
-        ("networkEvent"
-         (jss-with-alist-values (eventActor) event
-           (jss-with-alist-values (method url startedDateTime) eventActor
-             (let* ((actor (register-actor 'jss-firefox-NetworkEvent
-                                           :id (get-actor-id 'eventActor)
-                                           :tab tab
-                                           :state :listening))
-                    (io (make-instance 'jss-firefox-io
-                                       :NetworkActor actor
-                                       :request-method method
-                                       :url url
-                                       :lifecycle (list (list :sent (jss-js-time-to-emacs-time startedDateTime))))))
-               (setf (jss-tab-get-io tab (get-actor-id 'eventActor)) io)
-               (jss-console-insert-io console io)))))
-        ("pageError"
-         (register-actor  'jss-firefox-PageError
+      (let ((event-type (cdr (assoc 'type event))))
+        (cond
+         ((string= "evaluationResult" event-type)
+          ;; Async eval result: resolve the pending deferred by resultID
+          (let* ((result-id (cdr (assoc 'resultID event)))
+                 (pending   (jss-firefox-ConsoleActor-pending-evals ConsoleActor))
+                 (deferred  (gethash result-id pending)))
+            (when deferred
+              (remhash result-id pending)
+              (jss-deferred-callback deferred event))))
+         ((string= "networkEvent" event-type)
+          (jss-with-alist-values (eventActor) event
+            (jss-with-alist-values (method url startedDateTime) eventActor
+              (let* ((actor (register-actor 'jss-firefox-NetworkEvent
+                                            :id (get-actor-id 'eventActor)
+                                            :tab tab
+                                            :state :listening))
+                     (io (make-instance 'jss-firefox-io
+                                        :NetworkActor actor
+                                        :request-method method
+                                        :url url
+                                        :lifecycle (list (list :sent (jss-js-time-to-emacs-time startedDateTime))))))
+                (setf (jss-tab-get-io tab (get-actor-id 'eventActor)) io)
+                (jss-console-insert-io console io)))))
+         ((string= "pageError" event-type)
+          (register-actor 'jss-firefox-PageError
                           :id (get-actor-id 'pageError)
                           :state :listening))
-        ("locationChange"
-         (jss-with-alist-values (uri title state)
-             event
-           (jss-tab-set-url tab uri)
-           (jss-tab-set-title tab title)))))))
+         ((string= "locationChange" event-type)
+          (jss-with-alist-values (uri title state)
+              event
+            (jss-tab-set-url tab uri)
+            (jss-tab-set-title tab title)))
+         (t
+          ;; Unknown event types from modern Firefox protocol -- log and ignore
+          (jss-log-event (list :firefox :console-unknown-event event-type event))))))))
 
-(defmethod jss-evaluate ((console jss-firefox-console) text)
-  (lexical-let* ((console console)
-                 (Actor (jss-firefox-console-Actor console))
-                 (connection (jss-firefox-actor-connection Actor )))
-    (jss-deferred-then
-     (jss-firefox-send-message Actor "evaluateJS" "text" text)
-     (lambda (response)
-       (jss-with-alist-values (input result error errorMessage helperResult)
-           response
-         (make-jss-firefox-remote-object connection result))))))
+(cl-defmethod jss-evaluate ((console jss-firefox-console) text)
+  (let ((console console)
+        (text text))
+    (let ((Actor (jss-firefox-console-Actor console)))
+      (if (null Actor)
+          ;; ConsoleActor not yet available: wait for connection then retry
+          (jss-deferred-then
+           (jss-tab-connect (jss-console-tab console))
+           (lambda (_tab)
+             (jss-evaluate console text)))
+        ;; ConsoleActor available: use evaluateJSAsync two-phase protocol:
+        ;; Phase 1: send evaluateJSAsync -> get back {resultID}
+        ;; Phase 2: ConsoleActor fires unsolicited {type:"evaluationResult",
+        ;;          resultID:..., result:...} which we resolve via pending-evals
+        (let ((connection (jss-firefox-actor-connection Actor))
+              (result-deferred (make-jss-deferred)))
+          (jss-deferred-then
+           (jss-firefox-send-message Actor "evaluateJSAsync" "text" text)
+           (lambda (ack)
+             (let ((result-id (cdr (assoc 'resultID ack))))
+               (if result-id
+                   ;; Register deferred to be resolved when evaluationResult arrives
+                   (puthash result-id result-deferred
+                            (jss-firefox-ConsoleActor-pending-evals Actor))
+                 ;; Fallback: result came inline (shouldn't happen but be safe)
+                 (jss-deferred-callback result-deferred ack)))))
+          ;; Transform the evaluationResult event into a remote object
+          (jss-deferred-then
+           result-deferred
+           (lambda (eval-result)
+             (make-jss-firefox-remote-object
+              connection
+              (cdr (assoc 'result eval-result))))))))))
+
 
 (defclass jss-firefox-remote-object-mixin ()
   ((Actor :initarg :Actor)
    (properties :initarg :properties)))
 
-(defmethod jss-remote-object-class-name ((object jss-firefox-remote-object-mixin))
+(cl-defmethod jss-remote-object-class-name ((object jss-firefox-remote-object-mixin))
   (cdr (assoc 'className (slot-value object 'properties))))
 
-(defmethod jss-remote-object-label ((object jss-firefox-remote-object-mixin))
+(cl-defmethod jss-remote-object-label ((object jss-firefox-remote-object-mixin))
   (jss-firefox-remote-object-displayString object))
 
-(defmethod jss-firefox-remote-object-displayString ((object jss-firefox-remote-object-mixin))
+(cl-defmethod jss-firefox-remote-object-displayString ((object jss-firefox-remote-object-mixin))
   (cdr (assoc 'displayString (slot-value object 'properties))))
 
 (defclass jss-firefox-remote-object (jss-generic-remote-object jss-firefox-remote-object-mixin)
@@ -720,7 +793,7 @@
 (defclass jss-firefox-remote-function (jss-generic-remote-function jss-firefox-remote-object-mixin)
   ())
 
-(defmethod jss-remote-value-description ((function jss-firefox-remote-function))
+(cl-defmethod jss-remote-value-description ((function jss-firefox-remote-function))
   (replace-regexp-in-string "[ \t\n\r\f]+"
                             " "
                             (jss-firefox-remote-object-displayString function)))
@@ -754,8 +827,8 @@
        ((string= "undefined" type)
         (make-instance 'jss-generic-remote-undefined)))))))
 
-(defmethod jss-remote-object-get-properties ((object jss-firefox-remote-object-mixin) tab)
-  (lexical-let ((Actor (slot-value object 'Actor)))
+(cl-defmethod jss-remote-object-get-properties ((object jss-firefox-remote-object-mixin) tab)
+  (let ((Actor (slot-value object 'Actor)))
 ;     (if (cdr (assoc 'inspectable (slot-value object 'properties)))
 ;         (jss-deferred-then
 ;          (jss-firefox-send-message Actor "inspectProperties")
@@ -771,7 +844,7 @@
     ))
 
 (defun jss-firefox-make-object-properties (connection property-array)
-  (loop for p across property-array
+  (cl-loop for p across property-array
         collect (cons (cdr (assoc 'name p))
                       (make-jss-firefox-remote-object connection (cdr (assoc 'value p))))))
 

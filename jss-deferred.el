@@ -1,4 +1,4 @@
-;;; jss-deferred.el -- jss's implementation of the deferred/async/future idea
+;;; jss-deferred.el -- jss's implementation of the deferred/async/future idea  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -17,8 +17,9 @@
 ;; Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 ;; MA 02111-1307 USA
 
-(eval-when-compile
-  (require 'cl))
+;;; Commentary:
+;;; Code:
+
 (require 'eieio)
 
 (defclass jss-deferred ()
@@ -48,7 +49,7 @@ possible implementations of the latter approach."))
                                  (list errorback)
                                '())))
 
-(defun* make-jss-completed-deferred (&optional callback errorback)
+(cl-defun make-jss-completed-deferred (&optional callback errorback)
   "Create a deferred object which has already completed.
 
 Sometime we have to return a deferred but we've already done the
@@ -77,27 +78,27 @@ neccessary, add extra error handling to a deferred's callback."
   ;  (error (message "got error.")))
   )
 
-(defmethod jss-deferred-add-callback ((d jss-deferred) callback)
+(cl-defmethod jss-deferred-add-callback ((d jss-deferred) callback)
   "Add a function to be called when `d` completes."
   (if (eql :ok (car (jss-deferred-state d)))
       (jss-deferred-funcall callback (cdr (jss-deferred-state d)))
     (appendf (jss-deferred-callbacks d) (list callback)))
   d)
 
-(defmethod jss-deferred-add-errorback ((d jss-deferred) errorback)
+(cl-defmethod jss-deferred-add-errorback ((d jss-deferred) errorback)
   "Add a function to be called when `d` fails."
   (if (eql :fail (car (jss-deferred-state d)))
       (jss-deferred-funcall errorback (cdr (jss-deferred-state d)))
     (appendf (jss-deferred-errorbacks d) (list errorback)))
   d)
 
-(defmethod jss-deferred-add-backs ((d jss-deferred) &optional callback errorback)
-  (lexical-let ((new-deferred (make-jss-deferred)))
+(cl-defmethod jss-deferred-add-backs ((d jss-deferred) &optional callback errorback)
+  (let ((new-deferred (make-jss-deferred)))
     (when callback  (jss-deferred-add-callback d callback))
     (when errorback (jss-deferred-add-errorback d errorback)))  
   d)
 
-(defmethod jss-deferred-callback ((d jss-deferred) value)
+(cl-defmethod jss-deferred-callback ((d jss-deferred) value)
   "Successffully compete the deferred `d` with value
 `value`. Will immediatly call all of `d`'s callbacks."
   (while (jss-deferred-callbacks d)
@@ -105,7 +106,7 @@ neccessary, add extra error handling to a deferred's callback."
   (setf (jss-deferred-state d) (cons :ok value))
   value)
 
-(defmethod jss-deferred-errorback ((d jss-deferred) value)
+(cl-defmethod jss-deferred-errorback ((d jss-deferred) value)
   "Unsuccessfully complete the deferred `d` with value
 `value`. Will immediatly call all of `d`'s errorbacks."
   (while (jss-deferred-errorbacks d)
@@ -118,7 +119,7 @@ neccessary, add extra error handling to a deferred's callback."
 
 after, the returned deferred, will be passed the result of
 applying callback to `before`'s value."
-  (lexical-let ((after (make-jss-deferred))
+  (let ((after (make-jss-deferred))
                 (callback callback)
                 (errorback errorback))
     (jss-deferred-add-callback before
@@ -141,12 +142,12 @@ arbitrary order) of the deferredse If any of `deferreds` failes
 the returned deferred's errorback will be called with two values:
 the list or error values and the list of success values (which
 may be null)"
-  (lexical-let ((after (make-jss-deferred))
+  (let ((after (make-jss-deferred))
                 (successes '())
                 (failures  '())
                 (pending   '()))
     (dolist (this deferreds)
-      (lexical-let ((this this))
+      (let ((this this))
         (jss-deferred-add-backs this
                                 (lambda (value)
                                   (setf pending (delq this pending)

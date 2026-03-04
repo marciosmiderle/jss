@@ -1,4 +1,4 @@
-;;; jss.el -- top file for jsSlime, just loads the various .el files in the right order
+;;; jss.el -- top file for jsSlime, just loads the various .el files in the right order  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;

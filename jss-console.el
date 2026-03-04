@@ -1,4 +1,4 @@
-;;; jss-console.el -- a jss console and logger for a given browser tab
+;;; jss-console.el -- a jss console and logger for a given browser tab  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -17,7 +17,7 @@
 ;; Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 ;; MA 02111-1307 USA
 
-(eval-when-compile (require 'cl))
+(require 'cl-lib)
 (require 'eieio)
 (require 'jss-prompt)
 (require 'jss-browser-api)
@@ -69,7 +69,7 @@ expand objects while moving around the buffer."
   (setf jss-current-console-instance jss-console
         jss-current-tab-instance (jss-console-tab jss-console))
 
-  (lexical-let ((console (jss-current-console)))
+  (let ((console (jss-current-console)))
     (goto-char (jss-prompt-start-of-input
                 (jss-insert-prompt (lambda (text) (jss-evaluate console text))))))
   
@@ -105,7 +105,7 @@ expand objects while moving around the buffer."
   "Face for JSS error messages"
   :group 'jss)
 
-(defmethod jss-console-mode* ((console jss-generic-console))
+(cl-defmethod jss-console-mode* ((console jss-generic-console))
   (let ((jss-console console))
     (jss-console-mode)))
 
@@ -135,7 +135,7 @@ immediately if the connection already exsits)."
       (make-jss-completed-deferred (jss-current-tab))
     (unless (jss-tab-connected-p (jss-current-tab))
       (jss-console-debug-message (jss-current-console) "Connecting...")
-      (lexical-let ((buf (current-buffer)))
+      (let ((buf (current-buffer)))
         (jss-deferred-then
          (jss-tab-connect (jss-current-tab))
          (lambda (tab)
@@ -150,7 +150,7 @@ any necessary cleanup."
   (jss-when-bind (console (jss-current-console))
     (jss-when-bind (tab (jss-console-tab console))
       (jss-when-bind (browser (jss-tab-browser tab))
-        (lexical-let ((browser browser))
+        (let ((browser browser))
           (jss-deferred-then
            (jss-console-disconnect console)
            (lambda (console)
@@ -158,25 +158,25 @@ any necessary cleanup."
                    (jss-console-tab console) nil)
              (jss-browser-refresh browser))))))))
 
-(defmethod jss-console-debug-message ((console jss-generic-console) &rest format-message-args)
+(cl-defmethod jss-console-debug-message ((console jss-generic-console) &rest format-message-args)
   "Append a message, of priority \"debug\", to `console`."
   (apply 'jss-console-format-message console 'debug format-message-args))
 
-(defmethod jss-console-log-message ((console jss-generic-console) &rest format-message-args)
+(cl-defmethod jss-console-log-message ((console jss-generic-console) &rest format-message-args)
   "Append a message, of priority \"log\", to `console`."
   (apply 'jss-console-format-message console 'log format-message-args))
 
-(defmethod jss-console-warn-message ((console jss-generic-console) &rest format-message-args)
+(cl-defmethod jss-console-warn-message ((console jss-generic-console) &rest format-message-args)
   "Append a message, of priority \"warn\", to `console`."
   (apply 'jss-console-format-message console 'warn format-message-args))
 
-(defmethod jss-console-error-message ((console jss-generic-console) &rest format-message-args)
+(cl-defmethod jss-console-error-message ((console jss-generic-console) &rest format-message-args)
   "Append a message, of priority \"error\", to `console`."
   (apply 'jss-console-format-message console 'error format-message-args))
 
 (defun jss-console-level-face (level)
   "Returns the emacs face to use for console message of priority `level`"
-  (ecase level
+  (cl-ecase level
     (debug 'jss-console-debug-message)
     (log   'jss-console-log-message)
     (warn  'jss-console-warn-message)
@@ -184,14 +184,14 @@ any necessary cleanup."
 
 (defun jss-console-level-label (level)
   (concat "// "
-          (ecase level
+          (cl-ecase level
             (debug "note")
             (log   "log")
             (warn  "warning")
             (error "ERROR"))
           " // "))
 
-(defmethod jss-console-format-message ((console jss-generic-console) level format-string &rest format-args-and-properties)
+(cl-defmethod jss-console-format-message ((console jss-generic-console) level format-string &rest format-args-and-properties)
   "Insert a message, of the face correspoding to `level`, in
 `console`'s buffer. `format-string` and
 `format-args-and-properties` are passed to `format` to compute
@@ -203,7 +203,7 @@ inserted text."
   (let ((properties nil)
         (format-args nil))
     (if (member :properties format-args-and-properties)
-        (loop
+        (cl-loop
          for head on format-args-and-properties
          if (eql (car head) :properties)
          do (setf properties (second head)
@@ -211,20 +211,20 @@ inserted text."
          else do (push (car head) format-args)
          finally (setf format-args (reverse format-args)))
       (setf format-args format-args-and-properties))
-    (unless (cl-getf 'face properties)
+    (unless (cl-getf properties 'face)
       (setf properties (list* 'face (jss-console-level-face level) properties)))
     (with-current-buffer (jss-console-buffer console)
       (save-excursion
         (jss-before-last-prompt)
         (let ((start (point))
               (inhibit-read-only t))
-          (insert (jss-console-level-label level)) 
+          (insert (jss-console-level-label level))
           (insert (apply 'format format-string format-args) "\n")
           (unless (cl-getf properties 'read-only)
             (setf properties (list* 'read-only t properties)))
           (add-text-properties start (point) properties))))))
 
-(defmethod jss-console-insert-message-objects ((console jss-generic-console) level objects)
+(cl-defmethod jss-console-insert-message-objects ((console jss-generic-console) level objects)
   (save-excursion
     (with-current-buffer (jss-console-buffer console)
       (let ((inhibit-read-only t))
@@ -247,7 +247,7 @@ inserted text."
   (setf jss-console-log-timing-data (not jss-console-log-timing-data)))
 
 (defun jss-lifecycle-event-to-string (event-code)
-  (ecase event-code
+  (cl-ecase event-code
     (:sent "request sent")
     (:loading-finished "done")
     (:data-received "data")
@@ -256,7 +256,7 @@ inserted text."
     (:served-from-memory-cache "mem cached")
     (:response-received "response")))
 
-(defmethod jss-console-insert-io-line ((console jss-generic-console) io)
+(cl-defmethod jss-console-insert-io-line ((console jss-generic-console) io)
   "Insert a line into the current buffer (which must be a console
 buffer) describing the current state of `io`."
   (with-current-buffer (jss-console-buffer console)
@@ -302,11 +302,11 @@ buffer) describing the current state of `io`."
                           (jss-lifecycle-event-to-string last-what)
                           " (Elapsed " (format "%0.3fms" (- last-when.ms start-time.ms)) ")\n"))))))))))
 
-(defmethod jss-console-insert-io ((console jss-generic-console) io)
+(cl-defmethod jss-console-insert-io ((console jss-generic-console) io)
   "Insert a line in the buffer describing IO (and this should be the first time we've gotten an event related to IO."
   (jss-console-insert-io-line console io))
 
-(defmethod jss-console-update-io ((console jss-generic-console) io)
+(cl-defmethod jss-console-update-io ((console jss-generic-console) io)
 
   (with-current-buffer (jss-console-buffer console)
     (jss-delete-property-block 'jss-io-id (jss-io-id io) :error nil)
@@ -333,7 +333,7 @@ browser side objects."
 (defun jss-console-reload-page ()
   "Tell the browser to reload the current tab."
   (interactive)
-  (lexical-let ((tab (jss-current-tab)))
+  (let ((tab (jss-current-tab)))
     (jss-deferred-add-backs
       (jss-tab-reload tab)
       (lambda (response)

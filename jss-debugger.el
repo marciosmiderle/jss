@@ -1,4 +1,4 @@
-;;; jss-debugger.el -- jss mode for handling a browser exception
+;;; jss-debugger.el -- jss mode for handling a browser exception  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -84,10 +84,10 @@ the current frame's top line."
           (insert "Paused on ")
           (jss-insert-remote-value (jss-debugger-exception (jss-current-debugger))))
         (insert "\n\n")
-        (loop
+        (cl-loop
          initially (setf jss-debugger-num-frames 0)
          for frame in (jss-debugger-stack-frames jss-debugger)
-         do (incf jss-debugger-num-frames)
+         do (cl-incf jss-debugger-num-frames)
          do (jss-debugger-insert-frame frame (1- jss-debugger-num-frames)))
         (goto-char (car (jss-find-property-block 'jss-debugger-exception t)))))
     t))
@@ -104,7 +104,7 @@ the current frame's top line."
     [ "Jump to Exception" jss-frame-goto-exception t]
     [ "Jump to Frame Source" jss-frame-goto-source :active (get-text-property (point) 'jss-frame) ]))
 
-(defmethod jss-debugger-mode* ((dbg jss-generic-debugger))
+(cl-defmethod jss-debugger-mode* ((dbg jss-generic-debugger))
   (let ((jss-debugger dbg))
     (jss-debugger-mode)))
 
@@ -131,29 +131,29 @@ debugger in the jss-debugger-resume-points global variable (so
 that jss-debugger-resume-point can test for it)"
   (interactive)
   
-  (block nil
+  (cl-block nil
     (unless (jss-current-debugger)
       (error "Not currently in a debugger."))
     (let ((here-frame (first (jss-debugger-stack-frames (jss-current-debugger)))))
       (unless here-frame
         (warn "No top frame in current debugger, can't get source.")
-        (return))
+        (cl-return))
       (jss-deferred-then
        (jss-frame-get-source-location here-frame)
        (lambda (location)
-         (block nil
-           (destructuring-bind (script line column)
+         (cl-block nil
+           (cl-destructuring-bind (script line column)
                location
              (unless script
                (warn "No script location for top frame of debugger.")
-               (return))
+               (cl-return))
              (unless (and line column)
                (warn "No line or column info for top frame of debugger."))
              (let ((url (jss-script-url script)))
                (unless url
                  (warn "No url for script of top frame of debugger.")
-                 (return))
-               (pushnew (list url line column) jss-debugger-resume-points
+                 (cl-return))
+               (cl-pushnew (list url line column) jss-debugger-resume-points
                         :test 'equal)))))))))
 
 ;;; TODO: jss-debugger-resume-points (the opposite of breakpoints)
@@ -163,14 +163,14 @@ that jss-debugger-resume-point can test for it)"
   return true the exception is automatically resumed."
   :group 'jss)
 
-;(pushnew 'jss-is-jquery-exception jss-ignorable-exception-functions)
-;(pushnew 'jss-is-3rd-party-exception jss-ignorable-exception-functions)
+;(cl-pushnew 'jss-is-jquery-exception jss-ignorable-exception-functions)
+;(cl-pushnew 'jss-is-3rd-party-exception jss-ignorable-exception-functions)
 
 (defun jss-with-first-stack-frame-url (jss-debugger thunk)
   "Calls thunk passing in the url of the top frame in
 jss-debugger (when/if we get that information from the serevr and
 the url is a real url)."
-  (lexical-let ((thunk thunk)
+  (let ((thunk thunk)
                 (jss-debugger jss-debugger))
     (let ((frames (jss-debugger-stack-frames jss-debugger)))
       (if (first frames)
@@ -223,10 +223,10 @@ of the debugger after this function returns."
   ;; nb: some of the async code run to compute 'should ve resume' may
   ;; change buffers (it shouldn't, but i haven't yet figured out why),
   ;; so grab the buffer here before running that other code.
-  (lexical-let ((buffer (current-buffer))
+  (let ((buffer (current-buffer))
                 (jss-debugger jss-debugger))
     (dolist (func jss-debugger-auto-resume-functions)
-      (lexical-let* ((func func)
+      (let* ((func func)
                      (cond (funcall func jss-debugger))
                      (handler (lambda (value)
                                 (when value
@@ -250,7 +250,7 @@ of the debugger after this function returns."
             (prog1
                 (funcall handler cond)
               ;; no need to keep checking other conditions
-              (return))))))))
+              (cl-return))))))))
 
 (defvar jss-debugger-prompt-map
   (let ((map (make-sparse-keymap)))
@@ -261,11 +261,11 @@ jss-debugger buffer. Just provides an simple shortcut to jump out
 of the prompt and back to the current frame's label (where the
 normal debugger navigation commands are available).")
 
-(defmethod jss-debugger-insert-frame ((frame jss-generic-stack-frame) count)
+(cl-defmethod jss-debugger-insert-frame ((frame jss-generic-stack-frame) count)
   "Inserts the data and overlays and keymaps for `frame`. `count`
 is the current number of the frame (assumed to be unique to each
 to each frame without a debugger buffer)."
-  (lexical-let ((frame frame))
+  (let ((frame frame))
     (jss-wrap-with-text-properties (list 'jss-frame frame 'jss-frame-count count)
       (jss-toggling-visibility
        (lambda ()
@@ -321,7 +321,7 @@ code."
     (unless frame
       (error "No frame at point."))
     (save-excursion
-      (destructuring-bind (start . end)
+      (cl-destructuring-bind (start . end)
           (jss-find-property-block 'jss-frame frame :test 'eq)
         (goto-char start)
         (list frame
@@ -329,9 +329,9 @@ code."
               :frame-label-start (save-excursion (jss-start-of-next-property-block 'jss-frame-label))
               :frame-label-end   (save-excursion (jss-end-of-current-property-block 'jss-frame-label))))))) 
 
-(defmacro* with-frame-at-point ((frame &rest location-args) &body body)
+(cl-defmacro with-frame-at-point ((frame &rest location-args) &body body)
   (declare (indent 1))
-  `(destructuring-bind (,frame ,@location-args)
+  `(cl-destructuring-bind (,frame ,@location-args)
        (jss-frame-parts-locations (point))
      ,@body))
 
@@ -362,7 +362,7 @@ code."
 
 (defun jss-debugger-stepper-frame-restart ()
   (interactive)
-  (lexical-let ((frame (get-text-property (point) 'jss-frame))
+  (let ((frame (get-text-property (point) 'jss-frame))
                 (current-buffer (current-buffer)))
     (unless frame
       (error "No frame at point."))

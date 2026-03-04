@@ -1,4 +1,4 @@
-;;; jss-prompt.el -- code for reading and printing javascript code evaluations in a buffer
+;;; jss-prompt.el -- code for reading and printing javascript code evaluations in a buffer  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -20,8 +20,7 @@
 ;;; the jss prompt is designed so that it can be embedded in multiple
 ;;; places (the console buffer and the debugger for now).
 
-(eval-when-compile
-  (require 'cl))
+(require 'cl-lib)
 (require 'eieio)
 (require 'jss-browser-api)
 (require 'jss-remote-value)
@@ -47,7 +46,7 @@
 
 (defclass jss-prompt ()
   ((submit-function :initarg :submit-function :accessor jss-prompt-submit-function)
-   (id :initform (incfo jss-prompt-counter) :reader jss-prompt-id)
+   (id :initform (cl-incf jss-prompt-counter) :reader jss-prompt-id)
    (buffer :initarg :buffer :reader jss-prompt-buffer)
    (active-p :initform t :accessor jss-prompt-active-p)
    (history :initarg :history :reader jss-prompt-history)
@@ -60,7 +59,7 @@
    (local-map)
    (keymap)))
 
-(defun* jss-insert-prompt (submit-function &key local-map keymap previous-prompt)
+(cl-defun jss-insert-prompt (submit-function &key local-map keymap previous-prompt)
   "Insert a prompt which can be used to send javascript to the browser and view the resulting value.
 
 The prompt is just a line of editable text (even if the rest of
@@ -126,13 +125,13 @@ implemented)."
             (set-keymap jss-prompt-map))))))
     prompt))
 
-(defmethod jss-prompt-start-of-input ((prompt jss-prompt))
+(cl-defmethod jss-prompt-start-of-input ((prompt jss-prompt))
   (overlay-start (jss-prompt-input-overlay prompt)))
 
-(defmethod jss-prompt-start-of-output ((prompt jss-prompt))
+(cl-defmethod jss-prompt-start-of-output ((prompt jss-prompt))
   (overlay-start (jss-prompt-output-overlay prompt)))
 
-(defmethod jss-prompt-end-of-output ((prompt jss-prompt))
+(cl-defmethod jss-prompt-end-of-output ((prompt jss-prompt))
   (overlay-end (jss-prompt-output-overlay prompt)))
 
 (defun jss-before-last-prompt ()
@@ -146,21 +145,21 @@ implemented)."
   (let ((next-prompt (get-text-property (point) 'jss-prompt)))
     (goto-char (overlay-start (jss-prompt-input-overlay next-prompt)))))
 
-(defun* jss-prompt-current-prompt (&optional (warn t))
+(cl-defun jss-prompt-current-prompt (&optional (warn t))
   "Returns the prompt object around point. Uses some heuristics
   to figure out what the current prompt is."
   (save-excursion
-    (block nil
+    (cl-block nil
       (when (get-text-property (point) 'jss-prompt)
         ;; directly in a prompt
-        (return (get-text-property (point) 'jss-prompt)))
+        (cl-return (get-text-property (point) 'jss-prompt)))
       (unless (bobp)
         (backward-char 1)
         (when (get-text-property (point) 'jss-prompt)
-          (return (get-text-property (point) 'jss-prompt))))
+          (cl-return (get-text-property (point) 'jss-prompt))))
       (warn "Not currently in a prompt."))))
 
-(defmethod jss-prompt-input-text ((prompt jss-prompt))
+(cl-defmethod jss-prompt-input-text ((prompt jss-prompt))
   (with-current-buffer (jss-prompt-buffer prompt)
     (let* ((overlay (jss-prompt-input-overlay prompt))
            (start (overlay-start overlay))
@@ -180,11 +179,11 @@ there are syntax errors in teh input.
 
 Supply a prefix arg to force sending the current text"
   (interactive "P")
-  (block nil
+  (cl-block nil
     (let ((prompt (jss-prompt-current-prompt)))
 
       (when force-eval
-        (return (jss-prompt-submit prompt)))
+        (cl-return (jss-prompt-submit prompt)))
       
       (let ((js2-parse-errors
              (if (fboundp 'js2-parse)
@@ -200,17 +199,17 @@ Supply a prefix arg to force sending the current text"
               (insert-and-inherit "\n")
               (when (fboundp 'js2-indent-line)
                 (funcall 'js2-indent-line))
-              (return))
+              (cl-return))
           (jss-prompt-submit prompt))))))
 
-(defmethod jss-prompt-submit ((prompt jss-prompt))
-  (lexical-let ((input-text (jss-prompt-input-text prompt)))
+(cl-defmethod jss-prompt-submit ((prompt jss-prompt))
+  (let ((input-text (jss-prompt-input-text prompt)))
     (message "Submitting %s" input-text)
     (push input-text jss-prompt-input-history)
     (setf jss-prompt-input-history/last-inserted jss-prompt-input-history)
     (let ((inhibit-read-only t)
           (overlay (jss-prompt-input-overlay prompt)))
-      (lexical-let ((current-buffer (current-buffer))
+      (let ((current-buffer (current-buffer))
                     (prompt prompt))
         (add-text-properties (overlay-start overlay) (overlay-end overlay)
                              (list 'read-only t))
@@ -235,7 +234,7 @@ Supply a prefix arg to force sending the current text"
                     (jss-insert-prompt (jss-prompt-submit-function prompt)
                                        :previous-prompt prompt)))))))
 
-(defmethod jss-prompt-update-output ((prompt jss-prompt) remote-object)
+(cl-defmethod jss-prompt-update-output ((prompt jss-prompt) remote-object)
   (save-excursion
     (let ((inhibit-read-only t))
       (goto-char (jss-prompt-start-of-output prompt))
@@ -254,7 +253,7 @@ Supply a prefix arg to force sending the current text"
           (goto-char (min (1+ past-prompt-marker) (point-max)))
         (goto-char (point-max))))))
 
-(defmethod jss-prompt-set-input-text ((prompt jss-prompt) input-text)
+(cl-defmethod jss-prompt-set-input-text ((prompt jss-prompt) input-text)
   (let ((overlay (jss-prompt-input-overlay prompt)))
     (goto-char (overlay-start overlay))
     (insert input-text)

@@ -1,4 +1,4 @@
-;;; jss-script.el -- major mode for viewing javascript files/snippets from the browser
+;;; jss-script.el -- major mode for viewing javascript files/snippets from the browser  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -17,8 +17,7 @@
 ;; Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 ;; MA 02111-1307 USA
 
-(eval-when-compile
-  (require 'cl))
+(require 'cl-lib)
 (require 'eieio)
 (require 'jss-browser-api)
 (require 'url)
@@ -49,20 +48,20 @@ don't care about the schema use \"//example.com\", not simply
 The value returned by this function is not intended to be used
 directly, it should instead be put in the list
 jss-script-source-original-location-functions."
-  (lexical-let ((prefix-url prefix-url)
+  (let ((prefix-url prefix-url)
                 (file-name-prefix file-name-prefix))
     (lambda (script-url line-number column-number)
       (message "Testing %s against %s." script-url prefix-url)
-      (block nil
+      (cl-block nil
         (let ((prefix (url-generic-parse-url prefix-url))
               (script (url-generic-parse-url script-url)))
-          (unless prefix (return nil))
-          (unless script (return nil))
+          (unless prefix (cl-return nil))
+          (unless script (cl-return nil))
           (cl-flet ((url-part-match (part)
                                     (when (funcall part prefix)
                                       (unless (and (funcall part script)
                                                    (equal (funcall part script) (funcall part prefix)))
-                                        (return nil)))))
+                                        (cl-return nil)))))
 
             (url-part-match 'url-type)
             (url-part-match 'url-host)
@@ -74,7 +73,7 @@ jss-script-source-original-location-functions."
                      (concat file-name-prefix (substring (car (url-path-and-query script))
                                                          (length (car (url-path-and-query prefix)))))))
                 (message "File name: %s" file-name)
-                (return file-name)))))))))
+                (cl-return file-name)))))))))
 
 (make-variable-buffer-local
  (defvar jss-current-script nil))
@@ -95,15 +94,15 @@ jss-script-source-original-location-functions."
   (interactive)
   (setf (jss-script-buffer jss-current-script) nil))
 
-(defmethod jss-script-display-at-position ((script jss-generic-script) line-number column-number &optional force-server-side-js)
-  (block found-buffer
+(cl-defmethod jss-script-display-at-position ((script jss-generic-script) line-number column-number &optional force-server-side-js)
+  (cl-block found-buffer
     (when (and (jss-script-buffer script)
                (buffer-live-p (jss-script-buffer script)))
-      (return-from found-buffer
+      (cl-return-from found-buffer
        (jss-script-goto-offset script line-number column-number)))
 
     (unless force-server-side-js
-      (loop
+      (cl-loop
        for source-location-function in jss-script-source-original-location-functions
        for original-source = (funcall source-location-function
                                       (jss-script-url script)
@@ -111,13 +110,13 @@ jss-script-source-original-location-functions."
                                       column-number)
        when original-source
        do (setf (jss-script-buffer script) (find-file original-source))
-       and do (return-from found-buffer
+       and do (cl-return-from found-buffer
                 (jss-script-goto-offset script line-number column-number))))
 
-    (lexical-let ((script script)
+    (let ((script script)
                   (line-number line-number)
                   (column-number column-number))
-      (return-from found-buffer
+      (cl-return-from found-buffer
         (jss-deferred-then
          (jss-script-get-body script)
          (lambda (body)
@@ -131,7 +130,7 @@ jss-script-source-original-location-functions."
   "Face used to highlight the area around point."
   :group 'jss)
 
-(defmethod jss-script-goto-offset ((script jss-generic-script) line-number column-number)
+(cl-defmethod jss-script-goto-offset ((script jss-generic-script) line-number column-number)
   "Ensure that the point ot line `line-number` and column
 `column-number` of the script body of `script` is visible."
   (with-current-buffer (jss-script-buffer script)

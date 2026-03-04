@@ -1,4 +1,4 @@
-;;; jss-browser-webkit.el -- webkit implementation of jss's browser api
+;;; jss-browser-webkit.el -- webkit implementation of jss's browser api  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -20,7 +20,7 @@
 ;;; https://developers.google.com/chrome-developer-tools/docs/protocol/1.0/debugger#events
 ;;; http://trac.webkit.org/browser/trunk/Source/WebCore/inspector/Inspector.json
 
-(require 'cl)
+(require 'cl-lib)
 (require 'url)
 (require 'websocket)
 (require 'json)
@@ -29,32 +29,32 @@
 (defclass jss-webkit-browser (jss-generic-browser)
   ())
 
-(defmethod jss-browser-description ((browser jss-webkit-browser))
+(cl-defmethod jss-browser-description ((browser jss-webkit-browser))
   (format "Webkit @ %s:%s\nNB: Only displaying tabs that can be debugged." (jss-browser-host browser) (jss-browser-port browser)))
 
-(defmethod jss-webkit-remote-debugging-url ((browser jss-webkit-browser))
+(cl-defmethod jss-webkit-remote-debugging-url ((browser jss-webkit-browser))
   (format "http://%s:%s/json" (jss-browser-host browser) (jss-browser-port browser)))
 
-(defmethod jss-browser-find-tab ((browser jss-webkit-browser) tab-id)
+(cl-defmethod jss-browser-find-tab ((browser jss-webkit-browser) tab-id)
   (cdr (cl-assoc tab-id (slot-value browser 'tabs) :test 'string=)))
 
-(defmethod jss-browser-tabs ((browser jss-webkit-browser))
+(cl-defmethod jss-browser-tabs ((browser jss-webkit-browser))
   (mapcar 'cdr  (slot-value browser 'tabs)))
 
-(defmethod jss-browser-connected-p ((browser jss-webkit-browser))
+(cl-defmethod jss-browser-connected-p ((browser jss-webkit-browser))
   ;; in the webkit protocol we're acteally always (or never depending
   ;; on how you want to look at it) connected. connect/disconnect
   ;; doesn't really make any sense.
   t)
 
-(defmethod jss-browser-connect ((browser jss-webkit-browser))
+(cl-defmethod jss-browser-connect ((browser jss-webkit-browser))
   (make-jss-completed-deferred browser))
 
-(defmethod jss-browser-disconnect ((browser jss-webkit-browser))
+(cl-defmethod jss-browser-disconnect ((browser jss-webkit-browser))
   (make-jss-completed-deferred browser))
 
-(defmethod jss-browser-get-tabs ((browser jss-webkit-browser))
-  (lexical-let ((d (make-jss-deferred))
+(cl-defmethod jss-browser-get-tabs ((browser jss-webkit-browser))
+  (let ((d (make-jss-deferred))
                 (browser browser))
     (url-retrieve
      (jss-webkit-remote-debugging-url browser)
@@ -62,6 +62,7 @@
        (if status
            (if (cl-getf status :error)
                (jss-deferred-errorback d (cl-getf status :error))
+             ;; note: the plist argument order is correct here (status is the plist)
              (jss-deferred-errorback d (format "Unrecognized error: %s" (prin1-to-string status))))
          (progn
            (widen)
@@ -76,7 +77,7 @@
                  (search-forward "\n\n")
                  (delete-region (point-min) (point))
                  (let ((tab-data (json-read)))
-                   (loop
+                   (cl-loop
                     with new-tabs = '()
                     for tab-data across tab-data
                     for debugger-url = (cdr (assoc 'webSocketDebuggerUrl tab-data))
@@ -108,13 +109,13 @@
    (request-counter :initform 0)
    (requests :initform (make-hash-table :test 'equal)))) 
 
-(defmethod jss-tab-available-p ((tab jss-webkit-tab))
+(cl-defmethod jss-tab-available-p ((tab jss-webkit-tab))
   (slot-value tab 'debugger-url))
 
-(defmethod jss-webkit-tab-json-prop ((tab jss-webkit-tab) prop-name)
+(cl-defmethod jss-webkit-tab-json-prop ((tab jss-webkit-tab) prop-name)
   (cdr (assoc prop-name (slot-value tab 'json-data))))
 
-(defmethod jss-webkit-tab-json-set-prop ((tab jss-webkit-tab) prop-name prop-value)
+(cl-defmethod jss-webkit-tab-json-set-prop ((tab jss-webkit-tab) prop-name prop-value)
   (if (assoc prop-name (slot-value tab 'json-data))
       (setf (cdr (assoc prop-name (slot-value tab 'json-data))) prop-value)
     (push (cons prop-name prop-value) (slot-value tab 'json-data)))
@@ -122,13 +123,13 @@
 
 (defsetf jss-webkit-tab-json-prop jss-webkit-tab-json-set-prop)
 
-(defmethod jss-tab-title ((tab jss-webkit-tab))
+(cl-defmethod jss-tab-title ((tab jss-webkit-tab))
   (jss-webkit-tab-json-prop tab 'title))
 
-(defmethod jss-tab-url ((tab jss-webkit-tab))
+(cl-defmethod jss-tab-url ((tab jss-webkit-tab))
   (jss-webkit-tab-json-prop tab 'url))
 
-(defmethod jss-tab-id ((tab jss-webkit-tab))
+(cl-defmethod jss-tab-id ((tab jss-webkit-tab))
   (save-match-data
     (let ((debugger-url (jss-webkit-tab-json-prop tab 'webSocketDebuggerUrl)))
       (if debugger-url
@@ -137,22 +138,22 @@
             debugger-url)
         (error "Can not compute id for %s." tab)))))
 
-(defmethod jss-webkit-tab-debugger-url ((tab jss-webkit-tab))
+(cl-defmethod jss-webkit-tab-debugger-url ((tab jss-webkit-tab))
   (cdr (assoc 'webSocketDebuggerUrl (slot-value tab 'json-data))))
 
-(defmethod jss-tab-reload ((tab jss-webkit-tab))
+(cl-defmethod jss-tab-reload ((tab jss-webkit-tab))
   (jss-webkit-send-request tab '("Page.reload")))
 
-(defmethod jss-tab-connected-p ((tab jss-webkit-tab))
+(cl-defmethod jss-tab-connected-p ((tab jss-webkit-tab))
   (slot-value tab 'websocket))
 
-(defmethod jss-tab-connect ((tab jss-webkit-tab))
+(cl-defmethod jss-tab-connect ((tab jss-webkit-tab))
   (when (slot-value tab 'websocket)
     (error "Already connected. Disconnect first."))
-  (lexical-let ((tab tab)
+  (let ((tab tab)
                 (debugger-url (cdr (assoc 'webSocketDebuggerUrl (slot-value tab 'json-data)))))
     (jss-log-event (list :websocket debugger-url :open))
-    (lexical-let* ((ws-open (make-jss-deferred))
+    (let* ((ws-open (make-jss-deferred))
                    (socket (websocket-open debugger-url
                                            :on-message (lambda (websocket frame)
                                                          (jss-webkit-tab-websocket/on-message tab websocket frame))
@@ -166,12 +167,12 @@
                                                        (jss-deferred-errorback ws-open (list websocket action error))))))
       (setf (slot-value tab 'websocket) socket)
       
-      (lexical-let* ((connect-deferred (make-jss-deferred)))
+      (let* ((connect-deferred (make-jss-deferred)))
         ;; setup a deferred chain to send Console.enable after opening the ws connection
         (jss-deferred-add-backs
          ws-open
          (lambda (tab)
-           (lexical-let* ((tab tab)
+           (let* ((tab tab)
                           (console (jss-tab-console tab)))
              (jss-deferred-add-backs
               (jss-webkit-tab-enable tab "Console")
@@ -191,8 +192,8 @@
         
         connect-deferred))))
 
-(defmethod jss-tab-set-debugger-sensitivity ((tab jss-webkit-tab) sensitivity)
-  (let ((new-state (ecase sensitivity
+(cl-defmethod jss-tab-set-debugger-sensitivity ((tab jss-webkit-tab) sensitivity)
+  (let ((new-state (cl-ecase sensitivity
                      (:all "all")
                      (:uncaught "uncaught")
                      (:never "none"))))
@@ -202,7 +203,7 @@
                                       "Failed to setPauseOnExceptions(%s,%s)" sensitivity new-state)))
 
 (defun jss-webkit-enable-disable-monitor (tab domain component-name)
-  (lexical-let* ((tab tab)
+  (let* ((tab tab)
                  (console (jss-tab-console tab))
                  (domain domain)
                  (component-name component-name))
@@ -213,14 +214,14 @@
      (lambda (response)
        (jss-console-debug-message console "Could not enable %s: %s" domain response)))))
 
-(defmethod jss-tab-disable-network-monitor ((tab jss-webkit-tab))
+(cl-defmethod jss-tab-disable-network-monitor ((tab jss-webkit-tab))
   (jss-webkit-enable-disable-monitor tab "Network" "disable"))
 
-(defmethod jss-tab-enable-network-monitor ((tab jss-webkit-tab))
+(cl-defmethod jss-tab-enable-network-monitor ((tab jss-webkit-tab))
   (jss-webkit-enable-disable-monitor tab "Network" "enable"))
 
-(defmethod jss-webkit-tab-enable ((tab jss-webkit-tab) domain)
-  (lexical-let* ((tab tab)
+(cl-defmethod jss-webkit-tab-enable ((tab jss-webkit-tab) domain)
+  (let* ((tab tab)
                  (console (jss-tab-console tab))
                  (domain domain))
     (jss-deferred-add-backs
@@ -232,7 +233,7 @@
 
 (defvar jss-webkit-notification-handlers (make-hash-table :test 'equal))
 
-(defmethod jss-webkit-tab-websocket/on-message ((tab jss-webkit-tab) websocket frame)
+(cl-defmethod jss-webkit-tab-websocket/on-message ((tab jss-webkit-tab) websocket frame)
   (jss-log-event (list :websocket
                        (jss-webkit-tab-debugger-url tab)
                        :on-message
@@ -278,29 +279,29 @@
                                  :unknown-request-id
                                  message request-id))))))))
 
-(defmethod jss-webkit-tab-websocket/on-open ((tab jss-webkit-tab) websocket)
+(cl-defmethod jss-webkit-tab-websocket/on-open ((tab jss-webkit-tab) websocket)
   (jss-log-event (list :websocket (jss-webkit-tab-debugger-url tab) :on-open)))
 
-(defmethod jss-webkit-tab-websocket/on-close ((tab jss-webkit-tab) websocket)
+(cl-defmethod jss-webkit-tab-websocket/on-close ((tab jss-webkit-tab) websocket)
   (jss-log-event (list :websocket (jss-webkit-tab-debugger-url tab) :on-close))
   (when (jss-tab-console tab)
     (jss-console-error-message (jss-tab-console tab) "Remote end closed connection."))
   (setf (slot-value tab 'websocket) nil))
 
-(defmethod jss-webkit-tab-websocket/on-error ((tab jss-webkit-tab) websocket action error)
+(cl-defmethod jss-webkit-tab-websocket/on-error ((tab jss-webkit-tab) websocket action error)
   (jss-log-event (list :websocket (jss-webkit-tab-debugger-url tab) :on-error websocket action error)))
 
 (defmacro define-jss-webkit-notification-handler (name args &rest body)
   `(setf (gethash ,name jss-webkit-notification-handlers)
          (lambda (tab params message)
-           (lexical-let ,(mapcar (lambda (arg-name)
+           (let ,(mapcar (lambda (arg-name)
                                    (list arg-name `(cdr (assoc ',arg-name params))))
                                  args)
-             (lexical-let ((tab tab)
+             (let ((tab tab)
                            (console (jss-tab-console tab)))
                ,@body)))))
 
-(defmethod jss-evaluate ((tab jss-webkit-tab) js-code)
+(cl-defmethod jss-evaluate ((tab jss-webkit-tab) js-code)
   (jss-deferred-then
    (jss-webkit-send-request tab
                             `("Runtime.evaluate"
@@ -312,43 +313,43 @@
    (lambda (response)
      (make-jss-webkit-evaluation-error response))))
 
-(eval-when (compile load eval)
+(cl-eval-when (compile load eval)
   (defvar jss-debugger-object-group-count 0))
 
 (defclass jss-webkit-debugger (jss-generic-debugger)
-  ((object-group-id :initform (incf jss-debugger-object-group-count))
+  ((object-group-id :initform (cl-incf jss-debugger-object-group-count))
    (callFrames :initarg :callFrames :reader jss-debugger-stack-frames)
    (reason :initarg :reason)
    (data :initarg :data)))
 
-(defmethod jss-debugger-exception ((d jss-webkit-debugger))
+(cl-defmethod jss-debugger-exception ((d jss-webkit-debugger))
   (make-jss-webkit-remote-object (slot-value d 'data)))
 
-(defmethod jss-debugger-insert-message ((d jss-webkit-debugger))
+(cl-defmethod jss-debugger-insert-message ((d jss-webkit-debugger))
   (insert (slot-value d 'reason)))
 
 (defun jss-webkit-send-request-or-error (target request error-control &rest error-args)
-  (lexical-let ((error-control error-control)
+  (let ((error-control error-control)
                 (error-args error-args))
     (jss-deferred-add-errorback
      (jss-webkit-send-request target request)
      (lambda (err)
        (apply 'error (concat error-control ":%s") (append error-args err))))))
 
-(defmethod jss-debugger-resume ((d jss-webkit-debugger))
+(cl-defmethod jss-debugger-resume ((d jss-webkit-debugger))
   (jss-webkit-send-request-or-error (jss-debugger-tab d) '("Debugger.resume") "Failed to resume execution"))
 
-(defmethod jss-debugger-step-into ((d jss-webkit-debugger))
+(cl-defmethod jss-debugger-step-into ((d jss-webkit-debugger))
   (jss-webkit-send-request-or-error (jss-debugger-tab d) '("Debugger.stepInto") "Failed to step into"))
 
-(defmethod jss-debugger-step-out ((d jss-webkit-debugger))
+(cl-defmethod jss-debugger-step-out ((d jss-webkit-debugger))
   (jss-webkit-send-request-or-error (jss-debugger-tab d) '("Debugger.stepOut") "Failed to step out"))
 
-(defmethod jss-debugger-step-over ((d jss-webkit-debugger))
+(cl-defmethod jss-debugger-step-over ((d jss-webkit-debugger))
   (jss-webkit-send-request-or-error (jss-debugger-tab d) '("Debugger.stepOver") "Failed to step over"))
 
-(defmethod jss-debugger-cleanup ((d jss-webkit-debugger))
-  (lexical-let ((d d)
+(cl-defmethod jss-debugger-cleanup ((d jss-webkit-debugger))
+  (let ((d d)
                 (object-group (jss-webkit-object-group d)))
     (when (websocket-openp (slot-value (jss-debugger-tab d) 'websocket))
       (jss-deferred-add-errorback
@@ -360,20 +361,20 @@
 (defclass jss-webkit-stack-frame (jss-generic-stack-frame)
   ((properties :initarg :properties)))
 
-(defmethod jss-webkit-stack-frame-id ((frame jss-webkit-stack-frame))
+(cl-defmethod jss-webkit-stack-frame-id ((frame jss-webkit-stack-frame))
   (cdr (assoc 'callFrameId (slot-value frame 'properties))))
 
-(defmethod jss-frame-function-name ((frame jss-webkit-stack-frame))
+(cl-defmethod jss-frame-function-name ((frame jss-webkit-stack-frame))
   (cdr (assoc 'functionName (slot-value frame 'properties))))
 
-(defmethod jss-webkit-location-data (tab location)
+(cl-defmethod jss-webkit-location-data (tab location)
   (list :script (jss-tab-get-script tab (cdr (assoc 'scriptId location)))
         :script-id (cdr (assoc 'scriptId location))
         :line-number (cdr (assoc 'lineNumber location))
         :column-number (cdr (assoc 'columnNumber location))))
 
-(defmethod jss-frame-source-hint ((frame jss-webkit-stack-frame))
-  (destructuring-bind (&key script line-number column-number &allow-other-keys)
+(cl-defmethod jss-frame-source-hint ((frame jss-webkit-stack-frame))
+  (cl-destructuring-bind (&key script line-number column-number &allow-other-keys)
       (jss-webkit-location-data (jss-debugger-tab (jss-frame-debugger frame))
                                 (cdr (assoc 'location (slot-value frame 'properties))))
     
@@ -381,8 +382,8 @@
         (format "%s:%s:%s" (jss-script-url script) line-number column-number)
       nil)))
 
-(defmethod jss-frame-get-source-location ((frame jss-webkit-stack-frame))
-  (destructuring-bind (&key script script-id line-number column-number)
+(cl-defmethod jss-frame-get-source-location ((frame jss-webkit-stack-frame))
+  (cl-destructuring-bind (&key script script-id line-number column-number)
       (jss-webkit-location-data (jss-debugger-tab (jss-frame-debugger frame))
                                 (cdr (assoc 'location (slot-value frame 'properties))))
     (if script
@@ -394,8 +395,8 @@
         (make-jss-completed-deferred (list (jss-tab-get-script tab script-id)
                                            (or line-number 0)
                                            (or column-number 0)))))))
-(defmethod jss-frame-restart ((f jss-webkit-stack-frame))
-  (lexical-let ((restart (make-jss-deferred))
+(cl-defmethod jss-frame-restart ((f jss-webkit-stack-frame))
+  (let ((restart (make-jss-deferred))
                 (frame f))
     (jss-deferred-then
      (jss-webkit-send-request (jss-debugger-tab (jss-frame-debugger frame))
@@ -438,7 +439,7 @@
                                      :tab tab)))
 
     (setf (slot-value jss-debugger 'callFrames)
-          (loop
+          (cl-loop
            for frame across callFrames
            collect (make-instance 'jss-webkit-stack-frame :properties frame :debugger jss-debugger)))
     
@@ -453,14 +454,14 @@
 (defclass jss-webkit-script (jss-generic-script)
   ((properties :initarg :properties)))
 
-(defmethod jss-script-url ((script jss-webkit-script))
+(cl-defmethod jss-script-url ((script jss-webkit-script))
   (or (cdr (assoc 'url (slot-value script 'properties)))
       (format "injected://%s" (jss-script-id script))))
 
-(defmethod jss-script-id ((script jss-webkit-script))
+(cl-defmethod jss-script-id ((script jss-webkit-script))
   (cdr (assoc 'scriptId (slot-value script 'properties))))
 
-(defmethod jss-script-get-body ((script jss-webkit-script))
+(cl-defmethod jss-script-get-body ((script jss-webkit-script))
   (jss-deferred-then
    (jss-webkit-send-request (jss-script-tab script)
                             (list "Debugger.getScriptSource" (assoc 'scriptId (slot-value script 'properties))))
@@ -472,11 +473,11 @@
         (make-instance 'jss-webkit-script :properties params))
   t)
 
-(defmethod jss-webkit-send-request ((tab jss-webkit-tab) request)
+(cl-defmethod jss-webkit-send-request ((tab jss-webkit-tab) request)
   (let ((ws (slot-value tab 'websocket)))
     (unless (websocket-openp ws)
       (error "Websocket to tab %s is closed." (jss-tab-url tab)))
-    (let* ((request-id (incf (slot-value tab 'request-counter)))
+    (let* ((request-id (cl-incf (slot-value tab 'request-counter)))
            (payload (list* (cons 'id request-id)
                            (cons 'method (first request))
                            (when (rest request)
@@ -494,22 +495,22 @@
 (defclass jss-webkit-console (jss-generic-console)
   ((messages :initform (make-hash-table) :accessor jss-webkit-console-messages)))
 
-(defmethod jss-tab-make-console ((tab jss-webkit-tab) &rest initargs)
+(cl-defmethod jss-tab-make-console ((tab jss-webkit-tab) &rest initargs)
   (apply 'make-instance 'jss-webkit-console initargs))
 
-(defmethod jss-webkit-object-group ((tab jss-webkit-tab))
+(cl-defmethod jss-webkit-object-group ((tab jss-webkit-tab))
   (format "jssConsoleEvaluate_%s" (jss-tab-id tab)))
 
-(defmethod jss-webkit-object-group ((console jss-webkit-console))
+(cl-defmethod jss-webkit-object-group ((console jss-webkit-console))
   (jss-webkit-object-group (jss-console-tab console)))
 
-(defmethod jss-webkit-object-group ((frame jss-webkit-stack-frame))
+(cl-defmethod jss-webkit-object-group ((frame jss-webkit-stack-frame))
   (jss-webkit-object-group (jss-frame-debugger frame)))
 
-(defmethod jss-webkit-object-group ((debugger jss-webkit-debugger))
+(cl-defmethod jss-webkit-object-group ((debugger jss-webkit-debugger))
   (format "jssDebuggerEvaluate_%d" (slot-value debugger 'object-group-id)))
 
-(defmethod jss-evaluate ((console jss-webkit-console) js-code)
+(cl-defmethod jss-evaluate ((console jss-webkit-console) js-code)
   (jss-evaluate (jss-console-tab console) js-code))
 
 (defclass jss-webkit-evaluation-error (jss-generic-remote-object)
@@ -518,13 +519,13 @@
 (defun make-jss-webkit-evaluation-error (properties)
   (make-instance 'jss-webkit-evaluation-error :properties properties))
 
-(defmethod jss-remote-value-description ((error jss-webkit-evaluation-error))
+(cl-defmethod jss-remote-value-description ((error jss-webkit-evaluation-error))
   (format "// error // code: %s; message: %s; data: %s"
           (cdr (assoc 'code (slot-value error 'properties)))
           (cdr (assoc 'message (slot-value error 'properties)))
           (prin1-to-string (cdr (assoc 'data (slot-value error 'properties))))))
 
-(defmethod jss-evaluate ((frame jss-webkit-stack-frame) js-code)
+(cl-defmethod jss-evaluate ((frame jss-webkit-stack-frame) js-code)
   (jss-deferred-then
    (jss-webkit-send-request (jss-debugger-tab (jss-frame-debugger frame))
                             `("Debugger.evaluateOnCallFrame"
@@ -542,19 +543,19 @@
    (className   :initarg :className   :accessor jss-webkit-remote-object-className)
    (objectId    :initarg :objectId    :accessor jss-webkit-remote-object-id)))
 
-(defmethod jss-remote-object-class-name ((o jss-webkit-remote-object-mixin))
+(cl-defmethod jss-remote-object-class-name ((o jss-webkit-remote-object-mixin))
   (jss-webkit-remote-object-className o))
 
-(defmethod jss-remote-object-label ((o jss-webkit-remote-object-mixin))
+(cl-defmethod jss-remote-object-label ((o jss-webkit-remote-object-mixin))
   (jss-webkit-remote-object-description o))
 
-(defmethod jss-remote-object-get-properties ((object jss-webkit-remote-object-mixin) tab)
+(cl-defmethod jss-remote-object-get-properties ((object jss-webkit-remote-object-mixin) tab)
   (jss-deferred-then
    (jss-webkit-send-request tab (list "Runtime.getProperties"
                                       (cons 'objectId (jss-webkit-remote-object-id object))
                                       (cons 'ownProperties t)))
    (lambda (response)
-     (loop
+     (cl-loop
       for prop across (cdr (assoc 'result response))
       collect (cons (cdr (assoc 'name prop))
                     (make-jss-webkit-remote-object (cdr (assoc 'value prop))))))))
@@ -565,17 +566,17 @@
 
 (defclass jss-webkit-remote-date (jss-generic-remote-object jss-webkit-remote-object-mixin) ())
 
-(defmethod jss-insert-remote-value ((date jss-webkit-remote-date))
+(cl-defmethod jss-insert-remote-value ((date jss-webkit-remote-date))
   (jss-remote-value-insert-description date))
 
 (defclass jss-webkit-remote-node (jss-generic-remote-object jss-webkit-remote-object-mixin) ())
 
 (defclass jss-webkit-remote-regexp (jss-generic-remote-object jss-webkit-remote-object-mixin) ())
 
-(defmethod jss-remote-value-insert-description ((rx jss-webkit-remote-regexp))
+(cl-defmethod jss-remote-value-insert-description ((rx jss-webkit-remote-regexp))
   (jss-insert-with-highlighted-whitespace (jss-webkit-remote-object-description rx)))
 
-(defmethod jss-insert-remote-value ((rx jss-webkit-remote-regexp))
+(cl-defmethod jss-insert-remote-value ((rx jss-webkit-remote-regexp))
   (let ((jss-remote-value-auto-expand-property-limit 0))
     (call-next-method)))
 
@@ -583,8 +584,8 @@
   ((description :initarg :description :accessor jss-webkit-remote-object-description)
    (objectId    :initarg :objectId    :accessor jss-webkit-remote-object-id)))
 
-(defmethod jss-remote-function-get-source-location ((function jss-webkit-remote-function) tab)
-  (lexical-let ((getter (make-jss-deferred))
+(cl-defmethod jss-remote-function-get-source-location ((function jss-webkit-remote-function) tab)
+  (let ((getter (make-jss-deferred))
                 (function function))
     (jss-deferred-then
      (jss-webkit-send-request tab (list "Debugger.getFunctionDetails" (cons 'functionId (jss-webkit-remote-object-id function))))
@@ -599,7 +600,7 @@
            (jss-deferred-errorback getter (list 'can-find-script-location 'functionId (jss-webkit-remote-object-id function)))))))
     getter))
 
-(defmethod jss-remote-value-description ((func jss-webkit-remote-function))
+(cl-defmethod jss-remote-value-description ((func jss-webkit-remote-function))
   (replace-regexp-in-string "[ \t\n\r\f]+"
                             " "
                             (jss-webkit-remote-object-description func)))
@@ -610,7 +611,7 @@
     (if result
         (cond
          ((string= type "boolean")
-          (make-instance (ecase value
+          (make-instance (cl-ecase value
                            ((t) 'jss-generic-remote-true)
                            (:json-false 'jss-generic-remote-false))))
          
@@ -658,21 +659,21 @@
           (error "Unknown result type %s" type)))
       (make-instance 'jss-generic-remote-no-value))))
 
-(defmethod jss-get-object-properties ((tab jss-webkit-tab) object-id)
+(cl-defmethod jss-get-object-properties ((tab jss-webkit-tab) object-id)
   (jss-deferred-then (jss-webkit-send-request (jss-tab-console tab)
                                               (list "Runtime.getProperties"
                                                     (cons 'objectId object-id)
                                                     (cons 'ownProperties :json-false)))
                      (lambda (response)
-                       (loop for r across (cdr (assoc 'result response)) collect r))))
+                       (cl-loop for r across (cdr (assoc 'result response)) collect r))))
 
-(defmethod jss-console-clear ((console jss-webkit-console))
+(cl-defmethod jss-console-clear ((console jss-webkit-console))
   (jss-webkit-send-request-or-error (jss-console-tab console)
                                     (list "Runtime.releaseObjectGroup"
                                           (cons 'objectGroup (jss-webkit-object-group console)))
                                     "Failed to cleanup object group %s" (jss-webkit-object-group console)))
 
-(defmethod jss-console-disconnect ((console jss-webkit-console))
+(cl-defmethod jss-console-disconnect ((console jss-webkit-console))
   (let ((ws (slot-value (jss-console-tab console) 'websocket)))
     (when (websocket-openp ws)
       (jss-console-clear console)
@@ -691,7 +692,7 @@
                     (error "Unknown message type: %s" type))))
     (jss-console-insert-message-objects console
                                         level
-                                        (loop
+                                        (cl-loop
                                          for param across (cdr (assoc 'parameters message))
                                          collect (make-jss-webkit-remote-object param)))))
 
@@ -706,47 +707,47 @@
    (response :accessor jss-webkit-io-response :initform nil)
    (responseBody :accessor jss-webkit-io-responseBody :initform nil)))
 
-(defmethod jss-io-request-headers ((io jss-webkit-io))
+(cl-defmethod jss-io-request-headers ((io jss-webkit-io))
   (if (assoc 'redirectResponse (jss-webkit-io-properties io))
       (cdr (assoc 'headers (cdr (assoc 'redirectResponse (jss-webkit-io-properties io)))))
     (or (cdr (assoc 'requestHeaders (jss-webkit-io-response io)))
         (cdr (assoc 'headers (cdr (assoc 'request (jss-webkit-io-properties io)))))
         "--")))
 
-(defmethod jss-io-raw-request-headers ((io jss-webkit-io))
+(cl-defmethod jss-io-raw-request-headers ((io jss-webkit-io))
   (or (cdr (assoc 'requestHeadersText (jss-webkit-io-response io)))
       "--"))
 
-(defmethod jss-io-request-method ((io jss-webkit-io))
+(cl-defmethod jss-io-request-method ((io jss-webkit-io))
   (cdr (assoc 'method (cdr (assoc 'request (jss-webkit-io-properties io))))))
 
-(defmethod jss-io-request-url ((io jss-webkit-io))
+(cl-defmethod jss-io-request-url ((io jss-webkit-io))
   (cdr (assoc 'url (cdr (assoc 'request (jss-webkit-io-properties io))))))
 
-(defmethod jss-io-request-data ((io jss-webkit-io))
+(cl-defmethod jss-io-request-data ((io jss-webkit-io))
   (cdr (assoc 'postData (cdr (assoc 'request (jss-webkit-io-properties io))))))
 
-(defmethod jss-io-id ((io jss-webkit-io))
+(cl-defmethod jss-io-id ((io jss-webkit-io))
   (cdr (assoc 'requestId (jss-webkit-io-properties io))))
 
-(defmethod jss-io-response-headers ((io jss-webkit-io))
+(cl-defmethod jss-io-response-headers ((io jss-webkit-io))
   (if (assoc 'redirectResponse (jss-webkit-io-properties io))
       (cdr (assoc 'headers (cdr (assoc 'redirectResponse (jss-webkit-io-properties io)))))
       (cdr (assoc 'headers (jss-webkit-io-response io)))))
 
-(defmethod jss-io-raw-response-headers ((io jss-webkit-io))
+(cl-defmethod jss-io-raw-response-headers ((io jss-webkit-io))
   (if (assoc 'redirectResponse (jss-webkit-io-properties io))
       (cdr (assoc 'headersText (cdr (assoc 'redirectResponse (jss-webkit-io-properties io)))))
     (or (cdr (assoc 'headersText (jss-webkit-io-response io)))
         "--")))
 
-(defmethod jss-io-response-content-type ((io jss-webkit-io))
+(cl-defmethod jss-io-response-content-type ((io jss-webkit-io))
   (cdr (assoc 'mimeType (jss-webkit-io-response io))))
 
-(defmethod jss-io-response-content-length ((io jss-webkit-io))
+(cl-defmethod jss-io-response-content-length ((io jss-webkit-io))
   (cdr (assoc 'content-length (jss-io-response-headers io))))
 
-(defmethod jss-io-response-data ((io jss-webkit-io))
+(cl-defmethod jss-io-response-data ((io jss-webkit-io))
   (if (jss-webkit-io-responseBody io)
       (let ((base64-p (cdr (assoc 'base64Encoded (jss-webkit-io-responseBody io))))
             (body (cdr (assoc 'body (jss-webkit-io-responseBody io)))))
@@ -756,7 +757,7 @@
     ;; fwiw nil means something different from "" (no data vs 0 bytes of ata)
     nil))
 
-(defmethod jss-io-response-status ((io jss-webkit-io))
+(cl-defmethod jss-io-response-status ((io jss-webkit-io))
   (let ((response (if (assoc 'redirectResponse (jss-webkit-io-properties io))
                       (cdr (assoc 'redirectResponse (jss-webkit-io-properties io)))
                     (jss-webkit-io-response io))))
@@ -796,7 +797,7 @@
   (with-existing-io (tab requestId)
     (jss-nconc-item (jss-io-lifecycle io)
                     (list :loading-finished (seconds-to-time timestamp)))
-    (lexical-let ((io io)
+    (let ((io io)
                   (requestId requestId))
       (jss-deferred-add-backs
         (jss-webkit-send-request tab `("Network.getResponseBody" (requestId . ,requestId)))

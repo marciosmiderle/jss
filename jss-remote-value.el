@@ -1,4 +1,4 @@
-;;; jss-remote-value.el -- code for in-emacs printing and expanding of browser side objects
+;;; jss-remote-value.el -- code for in-emacs printing and expanding of browser side objects  -*- lexical-binding:t -*-
 ;;
 ;; Copyright (C) 2013 Edward Marco Baringer
 ;;
@@ -17,11 +17,11 @@
 ;; Software Foundation, Inc., 59 Temple Place, Suite 330, Boston,
 ;; MA 02111-1307 USA
 
-(require 'cl)
+(require 'cl-lib)
 (require 'eieio)
 (require 'jss-browser-api)
 
-(defgeneric jss-insert-remote-value (value)
+(cl-defgeneric jss-insert-remote-value (value)
   "Insert a link in an emacs buffer to a browser side object.
 
 A remote value is either primitive, or non-primitive. A primitive
@@ -56,10 +56,10 @@ the object in place. This is convient for small objects created
 in the prompt and for viewing the contents of exceptions, but can
 cause some buffer flicker due to the asynchronous-ness of it.")
 
-(defmethod jss-insert-remote-value ((value jss-generic-remote-primitive))
+(cl-defmethod jss-insert-remote-value ((value jss-generic-remote-primitive))
   (jss-remote-value-insert-description value))
 
-(defmethod jss-insert-remote-value ((value jss-generic-remote-non-primitive))
+(cl-defmethod jss-insert-remote-value ((value jss-generic-remote-non-primitive))
   (let ((start (point)))
     (jss-wrap-with-text-properties (list 'jss-remote-value value 'jss-remote-value-collapsed t)
       (jss-remote-value-insert-description value))
@@ -67,12 +67,12 @@ cause some buffer flicker due to the asynchronous-ness of it.")
 
 (defvar jss-remote-value-auto-expand-property-limit 6)
 
-(defmethod jss-insert-remote-value :after ((value jss-generic-remote-object))
+(cl-defmethod jss-insert-remote-value :after ((value jss-generic-remote-object))
   (jss-autoexpand-small-remote-object value jss-remote-value-auto-expand-property-limit))
 
-(defmethod jss-autoexpand-small-remote-object ((object jss-generic-remote-object) max-property-length)
+(cl-defmethod jss-autoexpand-small-remote-object ((object jss-generic-remote-object) max-property-length)
   (when max-property-length
-    (lexical-let ((object object)
+    (let ((object object)
                   (max-property-length max-property-length)
                   (buffer (current-buffer)))
       (jss-deferred-add-callback
@@ -86,7 +86,7 @@ cause some buffer flicker due to the asynchronous-ness of it.")
 
 (defun jss-add-text-property-unless-exists (start end property-name property-value)  
   (save-excursion
-    (block nil
+    (cl-block nil
       (goto-char start)
       (while (< (point) end)
         (setf start (point))
@@ -94,21 +94,21 @@ cause some buffer flicker due to the asynchronous-ness of it.")
           (forward-char 1)
           (when (= (point) end)
             (add-text-properties start (point) (list property-name property-value))
-            (return)))
+            (cl-return)))
         (add-text-properties start (point) (list property-name property-value))
         (when (get-text-property (point) property-name)
           (forward-char 1)
           (when (= (point) end)
-            (return)))))))
+            (cl-return)))))))
 
-(defmethod jss-remote-value-collapsed ((value jss-generic-remote-object))
+(cl-defmethod jss-remote-value-collapsed ((value jss-generic-remote-object))
   "Returns T if `value` is current collapsed."
   (let ((loc (jss-find-property-block 'jss-remote-value value)))
     (save-excursion
       (goto-char (car loc))
       (get-text-property (point) 'jss-remote-value-collapsed))))
 
-(defmethod jss-remote-value-expand ((value jss-generic-remote-object))
+(cl-defmethod jss-remote-value-expand ((value jss-generic-remote-object))
   "Inserts the properties of `value` into the current buffer (and
 sets `value` as non-collapsed)."
   (when (jss-remote-value-collapsed value)
@@ -120,7 +120,7 @@ sets `value` as non-collapsed)."
         (jss-remote-value-insert-description value)
         (insert "}")))
     
-    (lexical-let ((buffer (current-buffer))
+    (let ((buffer (current-buffer))
                   (value value))
 
       (jss-deferred-add-callback
@@ -136,7 +136,7 @@ sets `value` as non-collapsed)."
 and put `separator` between each name/value pair. If `identp` is
 non-NIL then ident each line before inserting the key (each key,
 value pair goes on the same line)"
-  (loop for first = t then nil
+  (cl-loop for first = t then nil
         for (prop . more) on alist
         when identp
           do (indent-to-column jss-remote-value-left-column)
@@ -146,7 +146,7 @@ value pair goes on the same line)"
         when more
         do (insert separator)))
 
-(defmethod jss-remote-value-replace-with-properties ((value jss-generic-remote-object) properties buffer)
+(cl-defmethod jss-remote-value-replace-with-properties ((value jss-generic-remote-object) properties buffer)
   "Delete the current representation of `value` and put its
 properties in its place."
   (when (buffer-live-p buffer)
@@ -174,7 +174,7 @@ properties in its place."
             (jss-remote-value-insert-as-object-properties properties ",\n" t)
             (insert "}")))))))
 
-(defmethod jss-remote-value-expand ((value jss-generic-remote-function))
+(cl-defmethod jss-remote-value-expand ((value jss-generic-remote-function))
   (jss-deferred-add-backs
    (jss-remote-function-get-source-location value (jss-current-tab))
    (lambda (location)
@@ -182,8 +182,8 @@ properties in its place."
    (lambda (error)
      (message "No source location for function."))))
 
-(defmethod jss-remote-value-expand ((value jss-generic-remote-array))
-  (lexical-let ((tab (jss-current-tab))
+(cl-defmethod jss-remote-value-expand ((value jss-generic-remote-array))
+  (let ((tab (jss-current-tab))
                 (value value)
                 (buffer (current-buffer)))
     (jss-replace-with-default-property (jss-remote-value value :test 'eq)
@@ -193,18 +193,18 @@ properties in its place."
        (lambda (properties)
          (jss-remote-value-replace-with-properties value properties buffer))))))
 
-(defmethod jss-remote-value-replace-with-properties ((value jss-generic-remote-array) properties buffer)
+(cl-defmethod jss-remote-value-replace-with-properties ((value jss-generic-remote-array) properties buffer)
   "Replace the array `value` with its elements."
   (let ((integer-properties '())
         (other-properties '()))
     (dolist (prop properties)
-      (destructuring-bind (key . value) prop
+      (cl-destructuring-bind (key . value) prop
         (if (save-match-data (string-match "^[[:digit:]]+$" key))
             (push (cons (string-to-number key) value) integer-properties)
           (push prop other-properties))))
     (jss-replace-with-default-property (jss-remote-value value :test 'eq)
       (with-current-buffer buffer
-        (loop
+        (cl-loop
          initially (insert "[")
          for item in (cl-sort integer-properties '< :key 'car)
          for first = t then nil
@@ -234,7 +234,7 @@ properties in its place."
       (while (and (not (get-text-property (point) 'jss-remote-value-collapsed))
                   (< (point-min) (point)))
         (backward-char 1)
-        (incf nearest-before-distance))
+        (cl-incf nearest-before-distance))
       (if (get-text-property (point) 'jss-remote-value-collapsed)
           (setf nearest-before (get-text-property (point) 'jss-remote-value))
         (setf nearest-before-distance nil)))
@@ -242,7 +242,7 @@ properties in its place."
       (while (and (not (get-text-property (point) 'jss-remote-value-collapsed))
                   (< (point) (point-max)))
         (forward-char 1)
-        (incf nearest-after-distance))
+        (cl-incf nearest-after-distance))
       (if (get-text-property (point) 'jss-remote-value-collapsed)
           (setf nearest-after (get-text-property (point) 'jss-remote-value))
         (setf nearest-after-distance nil)))
