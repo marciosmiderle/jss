@@ -230,10 +230,14 @@
            do (cl-return t)
          unless (looking-at "\\([0-9]+\\):")
            do (error "jss process filter syntax error, message at %s does not start with \\d+" (point))
-         do (let ((prefix (match-string 0))
+         do (let ((json-start (match-end 0))
                   (length (string-to-number (match-string 1))))
               (goto-char (match-end 0))
-              (if (< length (- (point-max) (length prefix)))
+              ;; length is byte count of the JSON payload; use buffer byte
+              ;; positions to check completeness (handles multibyte correctly)
+              (if (<= (byte-to-position
+                       (+ (position-bytes json-start) length))
+                      (point-max))
                   (let ((json (json-read)))
                     (delete-region (point-min) (point))
                     (jss-log-event (list :firefox :handle-message json))
@@ -418,7 +422,7 @@
                    (jss-firefox-actor-response-deferred actor) nil)
              (jss-deferred-callback deferred json)))
           (:listening
-           (jss-log-event (list :firefox :unsolicited-event actor json))
+           ;; (jss-log-event (list :firefox :unsolicited-event actor json))
            (jss-firefox-actor-handle-event actor json)))))))
 
 (cl-defmethod jss-firefox-actor-handle-event ((actor jss-firefox-RootActor) event)
