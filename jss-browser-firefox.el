@@ -389,7 +389,7 @@
   (let ((json-false :json-false)
         (json-null nil))
     (let ((string (json-encode object)))
-      (format "%d:%s" (length string) string))))
+      (format "%d:%s" (string-bytes string) string))))
 
 (cl-defmethod jss-firefox-connection-process-next-message ((actor jss-firefox-actor))
   (when (eql :idle (jss-firefox-actor-state actor))
@@ -783,7 +783,18 @@
   (cdr (assoc 'className (slot-value object 'properties))))
 
 (cl-defmethod jss-remote-object-label ((object jss-firefox-remote-object-mixin))
-  (jss-firefox-remote-object-displayString object))
+  (or (jss-firefox-remote-object-displayString object)
+      ;; Modern Firefox no longer sends displayString; build a label from
+      ;; class name and preview info stored in the properties alist.
+      (let* ((props (slot-value object 'properties))
+             (class (cdr (assoc 'class props)))
+             (preview (cdr (assoc 'preview props)))
+             (kind    (cdr (assoc 'kind preview)))
+             (len     (cdr (assoc 'length preview))))
+        (cond
+         ((and kind len) (format "%s(%s)" class len))
+         (class          class)
+         (t              "Object")))))
 
 (cl-defmethod jss-firefox-remote-object-displayString ((object jss-firefox-remote-object-mixin))
   (cdr (assoc 'displayString (slot-value object 'properties))))
@@ -815,7 +826,7 @@
    ((eql :json-false result)
     (make-instance 'jss-generic-remote-false))
    ((consp result)
-    (jss-with-alist-values (type className actor)
+    (jss-with-alist-values (type className actor name)
         result
       (cond
        ((string= "function" type)
@@ -823,33 +834,72 @@
                        :Actor (jss-firefox-register-actor connection (make-instance 'jss-firefox-ObjectActor :id actor))
                        :properties result))
        ((string= "object" type)
-        (make-instance 'jss-firefox-remote-object
-                       :Actor (jss-firefox-register-actor connection (make-instance 'jss-firefox-ObjectActor :id actor))
-                       :properties result))
+        (if actor
+            (make-instance 'jss-firefox-remote-object
+                           :Actor (jss-firefox-register-actor connection (make-instance 'jss-firefox-ObjectActor :id actor))
+                           :properties result)
+          ;; object without actor (e.g. empty preview stub) - treat as no-value
+          (make-instance 'jss-generic-remote-no-value)))
        ((string= "null" type)
         (make-instance 'jss-generic-remote-null))
        ((string= "undefined" type)
-        (make-instance 'jss-generic-remote-undefined)))))))
+        (make-instance 'jss-generic-remote-undefined))
+       ((string= "symbol" type)
+        ;; Symbols: represent as a string showing their name
+        (make-instance 'jss-generic-remote-string
+                       :value (format "Symbol(%s)" (or name ""))))
+       ((string= "bigint" type)
+        (make-instance 'jss-generic-remote-string
+                       :value (format "%sn" (or (cdr (assoc 'text result)) ""))))
+       (t
+        ;; Unknown type - show as string to avoid nil being passed upstream
+        (make-instance 'jss-generic-remote-string
+                       :value (format "#<%s>" (or type "?")))))))))
 
 (cl-defmethod jss-remote-object-get-properties ((object jss-firefox-remote-object-mixin) tab)
-  (let ((Actor (slot-value object 'Actor)))
-;     (if (cdr (assoc 'inspectable (slot-value object 'properties)))
-;         (jss-deferred-then
-;          (jss-firefox-send-message Actor "inspectProperties")
-;          (lambda (result)
-;            (jss-firefox-make-object-properties (jss-firefox-actor-connection Actor) (cdr (assoc 'properties result)))))
-;       (make-jss-completed-deferred '()))
+  (let* ((Actor      (slot-value object 'Actor))
+         (props      (slot-value object 'properties))
+         (preview    (cdr (assoc 'preview props)))
+         (connection (jss-firefox-actor-connection Actor)))
+    ;; If the preview already has inline items (ArrayLike), return them directly
+    ;; without a round-trip.  Otherwise use prototypeAndProperties (modern
+    ;; Firefox renamed inspectProperties).
+    (let ((inline-items (and preview (cdr (assoc 'items preview)))))
+      (if (and inline-items (> (length inline-items) 0))
+          (make-jss-completed-deferred
+           (cl-loop for item across inline-items
+                    for i from 0
+                    collect (cons (number-to-string i)
+                                  (make-jss-firefox-remote-object connection item))))
+        ;; Fall back to asking the actor for its properties
+        (jss-deferred-then
+         (jss-firefox-send-message Actor "prototypeAndProperties")
+         (lambda (result)
+           (jss-firefox-make-object-properties
+            connection
+            (cdr (assoc 'ownProperties result)))))))))
 
-    (jss-deferred-then
-     (jss-firefox-send-message Actor "inspectProperties")
-     (lambda (result)
-       (jss-firefox-make-object-properties (jss-firefox-actor-connection Actor) (cdr (assoc 'properties result)))))
-    
-    ))
-
-(defun jss-firefox-make-object-properties (connection property-array)
-  (cl-loop for p across property-array
-        collect (cons (cdr (assoc 'name p))
-                      (make-jss-firefox-remote-object connection (cdr (assoc 'value p))))))
+(defun jss-firefox-make-object-properties (connection property-map)
+  ;; prototypeAndProperties returns ownProperties as an alist {name -> descriptor}
+  ;; where name is a Lisp symbol and descriptor has (value ...) among other fields.
+  ;; inspectProperties (old) returned a vector [{name, value}, ...]
+  (cond
+   ((listp property-map)
+    (cl-loop for (name-sym . descriptor) in property-map
+             ;; name-sym is a Lisp symbol; convert carefully (handles $$typeof etc.)
+             for name-str = (if (symbolp name-sym)
+                                (symbol-name name-sym)
+                              (format "%s" name-sym))
+             for value-raw = (cdr (assoc 'value descriptor))
+             ;; Skip entries with no descriptor (e.g. safeGetterValues stubs)
+             when descriptor
+             collect (cons name-str
+                           (make-jss-firefox-remote-object connection value-raw))))
+   ((vectorp property-map)
+    (cl-loop for p across property-map
+             collect (cons (cdr (assoc 'name p))
+                           (make-jss-firefox-remote-object
+                            connection
+                            (cdr (assoc 'value p))))))))
 
 (provide 'jss-browser-firefox)
